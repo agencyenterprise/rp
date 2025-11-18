@@ -5,6 +5,7 @@ This module provides a clean interface to the RunPod API with proper error
 handling, type safety, and retry logic.
 """
 
+import json
 import time
 from typing import Any
 
@@ -29,6 +30,10 @@ class RunPodAPIClient:
             if not isinstance(pod_data, dict) or not pod_data.get("id"):
                 raise APIError.invalid_response(f"Invalid pod data for {pod_id}")
             return pod_data
+        except json.JSONDecodeError as e:
+            # API returned invalid JSON - likely pod doesn't exist
+            print(f"Warning: Could not parse API response when fetching pod: {e}")
+            raise PodError.invalid_status(pod_id) from e
         except Exception as e:
             if "not found" in str(e).lower() or "does not exist" in str(e).lower():
                 raise PodError.invalid_status(pod_id) from e
@@ -121,6 +126,23 @@ class RunPodAPIClient:
         """Terminate/destroy a pod."""
         try:
             runpod.terminate_pod(pod_id)
+        except json.JSONDecodeError as e:
+            # RunPod API sometimes returns invalid JSON on terminate
+            # Print the unparseable response for debugging
+            print(f"Warning: Could not parse API response: {e}")
+
+            # Verify if the pod was actually terminated
+            try:
+                self.get_pod(pod_id)
+                # If we can still get the pod and it's not terminated, this is a real error
+                raise PodError.operation_failed(
+                    "terminate",
+                    pod_id,
+                    f"API returned invalid JSON response and pod still exists: {e}",
+                ) from e
+            except PodError:
+                # Pod not found = successfully terminated despite JSON error
+                return
         except Exception as e:
             raise PodError.operation_failed("terminate", pod_id, str(e)) from e
 
