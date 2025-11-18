@@ -405,12 +405,38 @@ def destroy_command(alias: str | None, force: bool = False) -> None:
         handle_cli_error(e)
 
 
-def track_command(alias: str, pod_id: str, force: bool = False) -> None:
+def track_command(alias: str | None, pod_id: str, force: bool = False) -> None:
     """Track an existing RunPod pod with an alias."""
     try:
         pod_manager = get_pod_manager()
+
+        # If no alias provided, fetch pod details and use its name
+        if alias is None:
+            api_client = setup_api_client()
+            pod_data = api_client.get_pod(pod_id)
+            alias = pod_data.get("name", pod_id)
+            console.print(f"ℹ️  Using pod name '[bold]{alias}[/bold]' as alias")
+
         pod_manager.add_alias(alias, pod_id, force)
         console.print(f"✅ Now tracking '[bold]{alias}[/bold]' -> {pod_id}")
+
+        # Update SSH config if pod is running
+        pod = pod_manager.get_pod(alias)
+        if pod.ip_address and pod.ssh_port:
+            console.print(f"Found IP: [bold]{pod.ip_address}[/bold]")
+            console.print(f"Found Port: [bold]{pod.ssh_port}[/bold]")
+
+            ssh_config = SSHConfig(
+                alias=alias,
+                pod_id=pod.id,
+                hostname=pod.ip_address,
+                port=pod.ssh_port,
+            )
+            ssh_manager = get_ssh_manager()
+            ssh_manager.update_host_config(ssh_config)
+            console.print("✅ SSH config updated successfully.")
+        else:
+            console.print("ℹ️  Pod is not running, SSH config not updated.")
 
     except Exception as e:
         handle_cli_error(e)

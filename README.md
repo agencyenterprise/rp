@@ -137,8 +137,11 @@ rp list
 # Show detailed information about a specific pod
 rp show my-pod-1
 
-# Track an existing pod created via RunPod website
-rp track my-existing-pod <pod-id>
+# Track an existing pod created via RunPod website (uses pod's name as alias)
+rp track <pod-id>
+
+# Or track with a custom alias
+rp track <pod-id> my-existing-pod
 
 # Stop tracking a pod (doesn't destroy it, just removes the alias)
 rp untrack my-pod-1

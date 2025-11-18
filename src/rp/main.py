@@ -204,10 +204,10 @@ def destroy(
 
 @app.command()
 def track(
-    alias: str = typer.Argument(
-        ..., help="Alias name to assign to an existing RunPod pod id"
-    ),
     pod_id: str = typer.Argument(..., help="RunPod pod id (e.g., 89qgenjznh5t2j)"),
+    alias: str = typer.Argument(
+        None, help="Alias name (optional, defaults to pod name)"
+    ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite if alias already exists"
     ),

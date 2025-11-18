@@ -281,21 +281,31 @@ Track an existing RunPod pod with an alias.
 
 **Syntax:**
 ```bash
-rp track <alias> <pod_id> [options]
+rp track <pod_id> [alias] [options]
 ```
 
 **Arguments:**
-- `<alias>`: Alias to assign
 - `<pod_id>`: RunPod pod ID (e.g., `89qgenjznh5t2j`)
+- `[alias]`: Alias to assign (optional, defaults to pod's name from RunPod)
 
 **Options:**
 - `--force, -f`: Overwrite existing alias
 
-**Example:**
+**Examples:**
 ```bash
-# Track a pod created through RunPod website
-rp track my-existing-pod 89qgenjznh5t2j
+# Track a pod using its RunPod name as alias
+rp track 89qgenjznh5t2j
+
+# Track a pod with a custom alias
+rp track 89qgenjznh5t2j my-existing-pod
 ```
+
+**Behavior:**
+1. If no alias provided, fetches the pod's name from RunPod API and uses it as alias
+2. Adds alias to local configuration (`~/.config/rp/pods.json`)
+3. Queries RunPod API for pod details
+4. If pod is running, updates SSH config (`~/.ssh/config`) with IP address and port
+5. If pod is stopped, only tracks the alias (SSH config will be updated when pod is started)
 
 ---
 
@@ -986,8 +996,11 @@ rp schedule cancel <task-id>
 ### Managing Existing Pods
 
 ```bash
-# Track a pod created on RunPod website
-rp track existing-pod 89qgenjznh5t2j
+# Track a pod created on RunPod website (uses pod's name as alias)
+rp track 89qgenjznh5t2j
+
+# Or track with a custom alias
+rp track 89qgenjznh5t2j existing-pod
 
 # List all pods
 rp list
@@ -1109,7 +1122,7 @@ Some commands support `--force` to overwrite existing data:
 
 ```bash
 # Overwrite existing alias
-rp track my-pod new-pod-id --force
+rp track new-pod-id my-pod --force
 
 # Overwrite existing template
 rp template create training "train-{i}" --gpu 4xA100 --storage 2TB --force
