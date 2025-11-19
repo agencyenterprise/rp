@@ -29,7 +29,7 @@ class AliasError(RunPodCLIError):
         if available_aliases:
             details = f"Available aliases: {', '.join(available_aliases)}"
         elif available_aliases is not None:  # Empty list
-            details = "No aliases configured. Add one with: rp add <alias> <pod_id>"
+            details = "No aliases configured. Add one with `rp track <pod_id>` or create one with `rp create`."
         return cls(message, details)
 
     @classmethod

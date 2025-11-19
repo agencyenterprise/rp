@@ -31,7 +31,8 @@ def validate_host_alias(host_alias: str) -> str:
                 typer.echo(f"  {alias}", err=True)
         else:
             typer.echo(
-                "No aliases configured. Add one with: rp add <alias> <pod_id>", err=True
+                "No aliases configured. Add one with `rp track <pod_id>` or create one with `rp create`.",
+                err=True,
             )
         raise typer.Exit(1)
     return pod_configs[host_alias]

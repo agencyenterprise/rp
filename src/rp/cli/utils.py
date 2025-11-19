@@ -224,7 +224,7 @@ def display_pods_table(pods: list[Pod]) -> None:
     """Display a table of pods."""
     if not pods:
         console.print(
-            "[yellow]No aliases configured. Add one with: rp add <alias> <pod_id>[/yellow]"
+            "[yellow]No aliases configured. Add one with `rp track <pod_id>` or create one with `rp create`.[/yellow]"
         )
         return
 
