@@ -8,6 +8,7 @@ using the refactored service layer architecture.
 import contextlib
 import json
 
+import click
 import typer
 from typer.core import TyperGroup
 
@@ -91,7 +92,7 @@ def complete_template(incomplete: str) -> list[str]:
 class OrderedGroup(TyperGroup):
     """Custom group to control command order in help."""
 
-    def list_commands(self, _):
+    def list_commands(self, ctx: click.Context) -> list[str]:  # noqa: ARG002
         preferred = ["create", "destroy", "track"]
         all_cmds = list(self.commands.keys())
         rest = [c for c in all_cmds if c not in preferred]

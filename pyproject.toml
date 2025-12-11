@@ -11,6 +11,7 @@ dependencies = [
     "runpod>=1.7.13",
     "typer>=0.16.0",
     "questionary>=2.1.1",
+    "pycares<5.0.0",  # aiodns 3.5.0 incompatible with pycares 5.0.0
 ]
 
 [build-system]
@@ -63,9 +64,8 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
-[tool.ty]
-# ty configuration
-# ty is a lightweight type checker that focuses on speed and simplicity
+[tool.ty.src]
+exclude = ["tests"]
 
 [tool.bandit]
 exclude_dirs = ["tests"]

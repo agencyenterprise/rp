@@ -1254,6 +1254,7 @@ name = "rp"
 version = "0.4.0"
 source = { editable = "." }
 dependencies = [
+    { name = "pycares" },
     { name = "pydantic" },
     { name = "python-dateutil" },
     { name = "questionary" },
@@ -1279,6 +1280,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "factory-boy", marker = "extra == 'dev'", specifier = ">=3.3" },
+    { name = "pycares", specifier = "<5.0.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic", marker = "extra == 'dev'", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
