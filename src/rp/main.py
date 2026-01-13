@@ -14,6 +14,7 @@ from typer.core import TyperGroup
 
 from rp.cli.commands import (
     clean_command,
+    code_command,
     config_command,
     create_command,
     cursor_command,
@@ -337,6 +338,19 @@ def cursor(
 ):
     """Open Cursor editor with remote SSH connection to pod."""
     cursor_command(alias, path)
+
+
+@app.command()
+def code(
+    alias: str = typer.Argument(
+        None, help="Pod alias to connect to", autocompletion=complete_alias
+    ),
+    path: str = typer.Argument(
+        None, help="Remote path to open (uses config default or /workspace)"
+    ),
+):
+    """Open VS Code editor with remote SSH connection to pod."""
+    code_command(alias, path)
 
 
 @app.command()

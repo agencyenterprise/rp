@@ -791,6 +791,36 @@ def cursor_command(alias: str | None, path: str | None = None) -> None:
         handle_cli_error(e)
 
 
+def code_command(alias: str | None, path: str | None = None) -> None:
+    """Open VS Code editor with remote SSH connection to pod."""
+    try:
+        pod_manager = get_pod_manager()
+        alias = select_pod_if_needed(alias, pod_manager)
+        pod_manager.get_pod_id(alias)  # Validate alias exists
+
+        import subprocess
+
+        # Use configured default if path not provided
+        if path is None:
+            configured_path = pod_manager.get_pod_config_value(alias, "path")
+            path = configured_path or "/workspace"
+
+        remote_uri = f"vscode-remote://ssh-remote+{alias}{path}"
+        console.print(f"🖥️  Opening VS Code at '[bold]{alias}:{path}[/bold]'…")
+
+        subprocess.run(["code", "--folder-uri", remote_uri], check=True)
+        console.print("✅ VS Code opened successfully.")
+
+    except FileNotFoundError:
+        console.print(
+            "❌ VS Code command not found. Please ensure VS Code is installed and 'code' is in your PATH.",
+            style="red",
+        )
+        raise typer.Exit(1) from None
+    except Exception as e:
+        handle_cli_error(e)
+
+
 def shell_command(alias: str | None) -> None:
     """Open an interactive SSH shell to the pod."""
     try:
