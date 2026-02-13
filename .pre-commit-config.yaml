@@ -32,3 +32,4 @@ repos:
         name: ty check
         entry: uvx ty check . --project src/rp --python .venv
         language: system
+        types: [python]

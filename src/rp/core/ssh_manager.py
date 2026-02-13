@@ -185,7 +185,7 @@ class SSHManager:
                 hostname = None
                 port = None
                 user = "root"
-                identity_file = "~/.ssh/runpod"
+                identity_file = None
                 pod_id = None
 
                 for i in range(block["start"] + 1, block["end"]):

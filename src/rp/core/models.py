@@ -177,20 +177,22 @@ class SSHConfig(BaseModel):
     hostname: str = Field(description="SSH hostname/IP")
     port: int = Field(ge=1, le=65535, description="SSH port")
     user: str = Field(default="root", description="SSH username")
-    identity_file: str = Field(default="~/.ssh/runpod", description="SSH key file path")
+    identity_file: str | None = Field(default=None, description="SSH key file path")
 
     def to_ssh_block(self, updated_timestamp: str) -> list[str]:
         """Generate SSH config block lines."""
-        return [
+        lines = [
             f"Host {self.alias}\n",
             f"    # rp:managed alias={self.alias} pod_id={self.pod_id} updated={updated_timestamp}\n",
             f"    HostName {self.hostname}\n",
             f"    User {self.user}\n",
             f"    Port {self.port}\n",
-            "    IdentitiesOnly yes\n",
-            f"    IdentityFile {self.identity_file}\n",
-            "    ForwardAgent yes\n",
         ]
+        if self.identity_file:
+            lines.append("    IdentitiesOnly yes\n")
+            lines.append(f"    IdentityFile {self.identity_file}\n")
+        lines.append("    ForwardAgent yes\n")
+        return lines
 
 
 class PodCreateRequest(BaseModel):
