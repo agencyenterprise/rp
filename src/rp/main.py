@@ -206,7 +206,7 @@ def destroy(
 
 @app.command()
 def track(
-    pod_id: str = typer.Argument(..., help="RunPod pod id (e.g., 89qgenjznh5t2j)"),
+    pod_id: str = typer.Argument(..., help="RunPod pod ID or pod name"),
     alias: str = typer.Argument(
         None, help="Alias name (optional, defaults to pod name)"
     ),

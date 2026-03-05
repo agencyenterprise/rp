@@ -281,11 +281,13 @@ Track an existing RunPod pod with an alias.
 
 **Syntax:**
 ```bash
-rp track <pod_id> [alias] [options]
+rp track <pod_id_or_name> [alias] [options]
 ```
 
+The first argument can be either a RunPod pod ID (e.g., `89qgenjznh5t2j`) or a pod name (e.g., `my-pod`). If a pod ID lookup fails, the tool searches all pods by name.
+
 **Arguments:**
-- `<pod_id>`: RunPod pod ID (e.g., `89qgenjznh5t2j`)
+- `<pod_id_or_name>`: RunPod pod ID or pod name
 - `[alias]`: Alias to assign (optional, defaults to pod's name from RunPod)
 
 **Options:**
@@ -293,8 +295,11 @@ rp track <pod_id> [alias] [options]
 
 **Examples:**
 ```bash
-# Track a pod using its RunPod name as alias
+# Track a pod by ID (uses pod's RunPod name as alias)
 rp track 89qgenjznh5t2j
+
+# Track a pod by name (uses the name as alias)
+rp track my-pod-name
 
 # Track a pod with a custom alias
 rp track 89qgenjznh5t2j my-existing-pod

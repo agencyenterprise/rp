@@ -168,6 +168,24 @@ class RunPodAPIClient:
 
         raise PodError.timeout("become ready", timeout)
 
+    def get_pods(self) -> list[dict[str, Any]]:
+        """Get all pods."""
+        try:
+            result = runpod.get_pods()
+            if isinstance(result, list):
+                return result
+            return []
+        except Exception as e:
+            raise APIError.connection_failed(str(e)) from e
+
+    def find_pod_by_name(self, name: str) -> dict[str, Any] | None:
+        """Find a pod by its name. Returns the first match or None."""
+        pods = self.get_pods()
+        for pod in pods:
+            if pod.get("name") == name:
+                return pod
+        return None
+
     def get_gpus(self) -> list[dict[str, Any]]:
         """Get available GPU types."""
         try:

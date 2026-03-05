@@ -27,7 +27,7 @@ from rp.core.models import PodCreateRequest, PodTemplate, SSHConfig
 from rp.core.pod_manager import PodManager
 from rp.core.scheduler import Scheduler
 from rp.core.ssh_manager import SSHManager
-from rp.utils.errors import SchedulingError
+from rp.utils.errors import AliasError, APIError, PodError, SchedulingError
 
 # Initialize services (will be properly injected in production)
 _pod_manager: PodManager | None = None
@@ -409,11 +409,29 @@ def track_command(alias: str | None, pod_id: str, force: bool = False) -> None:
     """Track an existing RunPod pod with an alias."""
     try:
         pod_manager = get_pod_manager()
+        api_client = setup_api_client()
 
-        # If no alias provided, fetch pod details and use its name
-        if alias is None:
-            api_client = setup_api_client()
+        # Try to resolve pod_id — if it doesn't look like an ID, search by name
+        pod_data = None
+        try:
             pod_data = api_client.get_pod(pod_id)
+        except (APIError, PodError):
+            # pod_id might be a pod name, try to find by name
+            pod_data = api_client.find_pod_by_name(pod_id)
+            if pod_data:
+                real_id = pod_data["id"]
+                console.print(
+                    f"ℹ️  Resolved pod name '[bold]{pod_id}[/bold]' to ID {real_id}"
+                )
+                pod_id = real_id
+            else:
+                raise AliasError(
+                    f"Could not find pod with ID or name '{pod_id}'",
+                    details="Check the pod ID/name and try again.",
+                ) from None
+
+        # If no alias provided, use the pod's name
+        if alias is None:
             alias = pod_data.get("name", pod_id)
             console.print(f"ℹ️  Using pod name '[bold]{alias}[/bold]' as alias")
 
