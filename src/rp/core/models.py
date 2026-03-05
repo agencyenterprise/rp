@@ -278,8 +278,12 @@ class AppConfig(BaseModel):
     def add_alias(self, alias: str, pod_id: str, force: bool = False) -> bool:
         """Add or update an alias mapping."""
         # Check both legacy and new format
-        if (alias in self.aliases or alias in self.pod_metadata) and not force:
-            return False
+        existing_id = self.get_pod_id(alias)
+        if existing_id is not None:
+            if existing_id == pod_id:
+                return True  # Already tracking same pod, idempotent
+            if not force:
+                return False
 
         # Migrate to new format
         if alias in self.aliases:

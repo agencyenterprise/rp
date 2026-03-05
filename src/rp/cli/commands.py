@@ -412,6 +412,7 @@ def track_command(alias: str | None, pod_id: str, force: bool = False) -> None:
         api_client = setup_api_client()
 
         # Try to resolve pod_id — if it doesn't look like an ID, search by name
+        resolved_by_name = False
         pod_data = None
         try:
             pod_data = api_client.get_pod(pod_id)
@@ -419,11 +420,8 @@ def track_command(alias: str | None, pod_id: str, force: bool = False) -> None:
             # pod_id might be a pod name, try to find by name
             pod_data = api_client.find_pod_by_name(pod_id)
             if pod_data:
-                real_id = pod_data["id"]
-                console.print(
-                    f"ℹ️  Resolved pod name '[bold]{pod_id}[/bold]' to ID {real_id}"
-                )
-                pod_id = real_id
+                pod_id = pod_data["id"]
+                resolved_by_name = True
             else:
                 raise AliasError(
                     f"Could not find pod with ID or name '{pod_id}'",
@@ -433,9 +431,11 @@ def track_command(alias: str | None, pod_id: str, force: bool = False) -> None:
         # If no alias provided, use the pod's name
         if alias is None:
             alias = pod_data.get("name", pod_id)
-            console.print(f"ℹ️  Using pod name '[bold]{alias}[/bold]' as alias")
 
         pod_manager.add_alias(alias, pod_id, force)
+
+        if resolved_by_name:
+            console.print(f"ℹ️  Resolved pod name '[bold]{alias}[/bold]' to ID {pod_id}")
         console.print(f"✅ Now tracking '[bold]{alias}[/bold]' -> {pod_id}")
 
         # Update SSH config if pod is running
