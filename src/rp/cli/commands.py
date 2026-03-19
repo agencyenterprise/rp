@@ -95,14 +95,19 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
 
             if dry_run:
                 # Show what would be created
+                from rp.config import load_template_vars
+
                 template_obj = pod_manager.get_template(template)
                 if alias:
                     proposed_alias = alias
                 else:
-                    next_index = pod_manager.config.find_next_alias_index(
-                        template_obj.alias_template
+                    resolved_template = template_obj.resolve_alias_template(
+                        load_template_vars()
                     )
-                    proposed_alias = template_obj.alias_template.format(i=next_index)
+                    next_index = pod_manager.config.find_next_alias_index(
+                        resolved_template
+                    )
+                    proposed_alias = resolved_template.format(i=next_index)
 
                 console.print("[bold]DRY RUN[/bold] Would create:")
                 console.print(f"   Alias: {proposed_alias}")

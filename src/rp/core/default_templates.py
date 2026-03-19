@@ -24,28 +24,28 @@ def get_default_templates() -> dict[str, PodTemplate]:
     return {
         "h100": PodTemplate(
             identifier="h100",
-            alias_template="h100-{i}",
+            alias_template="{project}_{person}_{i}",
             gpu_spec="h100",
             storage_spec=DEFAULT_STORAGE,
             image=DEFAULT_IMAGE,
         ),
         "2h100": PodTemplate(
             identifier="2h100",
-            alias_template="2h100-{i}",
+            alias_template="{project}_{person}_{i}",
             gpu_spec="2xh100",
             storage_spec=DEFAULT_STORAGE,
             image=DEFAULT_IMAGE,
         ),
         "5090": PodTemplate(
             identifier="5090",
-            alias_template="5090-{i}",
+            alias_template="{project}_{person}_{i}",
             gpu_spec="rtx5090",
             storage_spec=DEFAULT_STORAGE,
             image=DEFAULT_IMAGE,
         ),
         "a40": PodTemplate(
             identifier="a40",
-            alias_template="a40-{i}",
+            alias_template="{project}_{person}_{i}",
             gpu_spec="a40",
             storage_spec=DEFAULT_STORAGE,
             image=DEFAULT_IMAGE,

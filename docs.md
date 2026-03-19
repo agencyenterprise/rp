@@ -138,15 +138,15 @@ Open VS Code via remote SSH. Default path: `/workspace`.
 
 #### `rp template create <id> --alias-pattern PATTERN --gpu SPEC --storage SIZE [--container-disk SIZE] [--image IMAGE] [-f]`
 
-Create a reusable pod template. Pattern must contain `{i}` placeholder for auto-numbering.
+Create a reusable pod template. Pattern must contain `{i}` placeholder for auto-numbering. Can also include variable placeholders like `{project}` and `{person}` that are resolved from `~/.config/rp/.env` or `RP_`-prefixed environment variables.
 
 ```bash
-rp template create ml --alias-pattern "ml-{i}" --gpu 2xA100 --storage 1TB
+rp template create ml --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --storage 1TB
 ```
 
 #### `rp template list` / `rp template delete <id>`
 
-List or delete templates. Built-in defaults: `h100`, `2h100`, `5090`, `a40`.
+List or delete templates. Built-in defaults: `h100`, `2h100`, `5090`, `a40` (all use `{project}_{person}_{i}` pattern).
 
 ---
 
@@ -159,18 +159,33 @@ All config in `~/.config/rp/`:
 | `pods.json` | Aliases, pod metadata (including `managed` flag), templates |
 | `secrets.json` | Manifest of secret names stored in Keychain |
 | `setup.sh` | Script run on bare pods during create/start |
+| `.env` | Template variables for pod naming (e.g., `PROJECT`, `PERSON`) |
+
+### .env (Template Variables)
+
+Define variables used in alias templates. Keys are case-insensitive (mapped to lowercase for `{placeholder}` matching). `RP_`-prefixed environment variables override `.env` values.
+
+```bash
+# ~/.config/rp/.env
+PROJECT=ast
+PERSON=alex
+```
+
+With these set, a template using `{project}_{person}_{i}` produces aliases like `ast_alex_1`, `ast_alex_2`, etc.
+
+Override per-command: `RP_PROJECT=other rp up h100`
 
 ### pods.json
 
 ```json
 {
   "pod_metadata": {
-    "my-pod": { "pod_id": "89qgenjznh5t2j", "managed": true }
+    "ast_alex_1": { "pod_id": "89qgenjznh5t2j", "managed": true }
   },
   "pod_templates": {
     "ml": {
       "identifier": "ml",
-      "alias_template": "ml-{i}",
+      "alias_template": "{project}_{person}_{i}",
       "gpu_spec": "2xA100",
       "storage_spec": "1TB"
     }
@@ -206,7 +221,9 @@ Edge case: `x` in model name (e.g., `rtx4090`) is fine — only treated as count
 
 ### Template Auto-Numbering
 
-`find_next_alias_index()` finds lowest `i ≥ 1` where `template.format(i=i)` doesn't exist in aliases. Destroying `ml-1` then creating from template gives `ml-1` again.
+Templates support variable placeholders (e.g., `{project}`, `{person}`) resolved from `~/.config/rp/.env` or `RP_`-prefixed env vars, plus `{i}` for auto-numbering.
+
+`find_next_alias_index()` finds lowest `i ≥ 1` where the resolved template with that `i` doesn't exist in aliases. Destroying `ast_alex_1` then creating from template gives `ast_alex_1` again.
 
 ### Auto-Shutdown (Managed Pods)
 

@@ -312,6 +312,63 @@ class TestAppConfig:
         assert config.find_next_alias_index("prefix-{i}-suffix") == 2
 
 
+class TestPodTemplateVariables:
+    """Test template variable resolution."""
+
+    def test_get_variable_names(self):
+        """Test extracting variable names from template."""
+        template = PodTemplate(
+            identifier="t",
+            alias_template="{project}_{person}_{i}",
+            gpu_spec="h100",
+            storage_spec="500GB",
+        )
+        assert template.get_variable_names() == ["project", "person"]
+
+    def test_get_variable_names_no_vars(self):
+        """Test template with only {i} has no variable names."""
+        template = PodTemplate(
+            identifier="t",
+            alias_template="test-{i}",
+            gpu_spec="h100",
+            storage_spec="500GB",
+        )
+        assert template.get_variable_names() == []
+
+    def test_resolve_alias_template(self):
+        """Test resolving variables in alias template."""
+        template = PodTemplate(
+            identifier="t",
+            alias_template="{project}_{person}_{i}",
+            gpu_spec="h100",
+            storage_spec="500GB",
+        )
+        resolved = template.resolve_alias_template({"project": "ast", "person": "alex"})
+        assert resolved == "ast_alex_{i}"
+
+    def test_resolve_alias_template_no_vars(self):
+        """Test resolving a template with no variables is a no-op."""
+        template = PodTemplate(
+            identifier="t",
+            alias_template="test-{i}",
+            gpu_spec="h100",
+            storage_spec="500GB",
+        )
+        resolved = template.resolve_alias_template({})
+        assert resolved == "test-{i}"
+
+    def test_resolve_alias_template_missing_var(self):
+        """Test that missing variables raise a clear error."""
+        template = PodTemplate(
+            identifier="t",
+            alias_template="{project}_{person}_{i}",
+            gpu_spec="h100",
+            storage_spec="500GB",
+        )
+        with pytest.raises(ValueError, match="requires variables.*person"):
+            template.resolve_alias_template({"project": "ast"})
+
+
 class TestPodMetadata:
     """Test pod metadata model."""
 

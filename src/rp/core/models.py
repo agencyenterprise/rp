@@ -5,6 +5,7 @@ This module defines the core data structures used throughout the application,
 providing type safety, validation, and serialization capabilities.
 """
 
+import re
 from datetime import datetime
 from enum import Enum
 
@@ -184,7 +185,8 @@ class PodTemplate(BaseModel):
 
     identifier: str = Field(description="Unique template identifier (e.g., 'alex-ast')")
     alias_template: str = Field(
-        description="Alias template with {i} placeholder (e.g., 'alex-ast-{i}')"
+        description="Alias template with {i} placeholder and optional variable "
+        "placeholders (e.g., '{project}_{person}_{i}')"
     )
     gpu_spec: str = Field(description="GPU specification string (e.g., '2xA100')")
     storage_spec: str = Field(
@@ -203,6 +205,34 @@ class PodTemplate(BaseModel):
         if "{i}" not in v:
             raise ValueError("Alias template must contain '{i}' placeholder")
         return v
+
+    def get_variable_names(self) -> list[str]:
+        """Return placeholder names in the template, excluding 'i'."""
+        return [
+            name
+            for name in re.findall(r"\{(\w+)\}", self.alias_template)
+            if name != "i"
+        ]
+
+    def resolve_alias_template(self, template_vars: dict[str, str]) -> str:
+        """Resolve variable placeholders in alias_template, leaving {i} intact.
+
+        Raises ValueError if any required variable is missing from template_vars.
+        """
+        var_names = self.get_variable_names()
+        missing = [name for name in var_names if name not in template_vars]
+        if missing:
+            raise ValueError(
+                f"Template '{self.identifier}' requires variables {missing} "
+                f"but they are not set. Define them in ~/.config/rp/.env or "
+                f"as RP_-prefixed environment variables "
+                f"(e.g. RP_{missing[0].upper()}=value)."
+            )
+        # Substitute all vars except {i}
+        resolved = self.alias_template
+        for name in var_names:
+            resolved = resolved.replace(f"{{{name}}}", template_vars[name])
+        return resolved
 
 
 class PodMetadata(BaseModel):

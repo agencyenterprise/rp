@@ -62,11 +62,19 @@ rp destroy h100-1 -f
 
 ### Templates
 
-Built-in: `h100`, `2h100`, `5090`, `a40` (all 500GB storage).
+Built-in: `h100`, `2h100`, `5090`, `a40` (all 500GB storage, using `{project}_{person}_{i}` naming).
 
 ```bash
-rp template create ml --alias-pattern "ml-{i}" --gpu 2xA100 --storage 1TB
-rp create ml        # creates ml-1, ml-2, etc.
+# Set naming variables in ~/.config/rp/.env
+echo "PROJECT=ast\nPERSON=alex" > ~/.config/rp/.env
+
+rp create h100      # creates ast_alex_1, ast_alex_2, etc.
+
+# Override per-command
+RP_PROJECT=other rp create h100   # creates other_alex_1
+
+# Custom templates
+rp template create ml --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --storage 1TB
 rp template list
 rp template delete ml
 ```
@@ -76,5 +84,6 @@ rp template delete ml
 All config in `~/.config/rp/`. See [docs.md](docs.md) for details.
 
 - `pods.json` — aliases, metadata, templates
+- `.env` — template variables for pod naming (`PROJECT`, `PERSON`, etc.)
 - `secrets.json` — Keychain secret manifest
 - `setup.sh` — script for bare pods (customizable)
