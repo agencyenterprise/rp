@@ -17,6 +17,7 @@ from rp.cli.commands import (
     create_command,
     destroy_command,
     list_command,
+    run_command,
     shell_command,
     show_command,
     start_command,
@@ -27,6 +28,7 @@ from rp.cli.commands import (
     track_command,
     untrack_command,
 )
+from rp.cli.utils import console
 from rp.config import POD_CONFIG_FILE
 from rp.core.models import AppConfig
 
@@ -291,6 +293,28 @@ def shell(
 ):
     """Open an interactive SSH shell to the pod."""
     shell_command(alias)
+
+
+@app.command(
+    "run",
+    context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
+)
+def run(
+    ctx: typer.Context,
+    alias: str = typer.Argument(
+        ..., help="Pod alias to run command on", autocompletion=complete_alias
+    ),
+):
+    """Execute a command on a remote pod via SSH.
+
+    Example: rp run my-pod -- ls -la /workspace
+    """
+    if not ctx.args:
+        console.print(
+            "❌ No command specified. Usage: rp run <alias> -- <command>", style="red"
+        )
+        raise typer.Exit(1)
+    run_command(alias, ctx.args)
 
 
 def main():

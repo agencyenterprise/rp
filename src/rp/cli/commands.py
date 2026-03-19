@@ -639,3 +639,24 @@ def shell_command(alias: str | None) -> None:
 
     except Exception as e:
         handle_cli_error(e)
+
+
+def run_command(alias: str | None, command: list[str]) -> None:
+    """Execute a command on a remote pod via SSH."""
+    try:
+        import shlex
+        import subprocess
+
+        pod_manager = get_pod_manager()
+        alias = select_pod_if_needed(alias, pod_manager)
+        pod_manager.get_pod_id(alias)  # Validate alias exists
+
+        full_command = " ".join(command)
+        console.print(f"Running on '[bold]{alias}[/bold]': {full_command}")
+        subprocess.run(
+            ["ssh", "-A", alias, f"bash -l -c {shlex.quote(full_command)}"],
+            check=False,
+        )
+
+    except Exception as e:
+        handle_cli_error(e)
