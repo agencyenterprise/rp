@@ -224,7 +224,7 @@ class TestAppConfig:
         """Test creating empty configuration."""
         config = AppConfig()
 
-        assert config.aliases == {}
+        assert config.pod_metadata == {}
         assert config.pod_templates == {}
 
     def test_add_template(self):
@@ -295,20 +295,20 @@ class TestAppConfig:
         assert config.find_next_alias_index("test-{i}") == 1
 
         # Add some aliases
-        config.aliases["test-1"] = "pod1"
-        config.aliases["test-3"] = "pod3"
+        config.add_alias("test-1", "pod1")
+        config.add_alias("test-3", "pod3")
 
         # Should return 2 (lowest available)
         assert config.find_next_alias_index("test-{i}") == 2
 
         # Add test-2
-        config.aliases["test-2"] = "pod2"
+        config.add_alias("test-2", "pod2")
 
         # Should now return 4
         assert config.find_next_alias_index("test-{i}") == 4
 
         # Test with different template format
-        config.aliases["prefix-1-suffix"] = "pod4"
+        config.add_alias("prefix-1-suffix", "pod4")
         assert config.find_next_alias_index("prefix-{i}-suffix") == 2
 
 
@@ -332,16 +332,26 @@ class TestPodMetadata:
         assert metadata.managed is True
 
 
-class TestAppConfigMigration:
-    """Test AppConfig legacy format migration."""
+class TestAppConfigAliases:
+    """Test AppConfig alias operations."""
 
-    def test_get_all_aliases_both_formats(self):
-        """Test getting all aliases from both formats."""
-        config = AppConfig(aliases={"legacy-1": "pod1"})
-        config.add_alias("new-1", "pod2")
+    def test_add_and_get_aliases(self):
+        """Test adding aliases and retrieving them."""
+        config = AppConfig()
+        config.add_alias("pod-1", "id1")
+        config.add_alias("pod-2", "id2")
 
-        all_aliases = config.get_all_aliases()
-        assert all_aliases == {
-            "legacy-1": "pod1",
-            "new-1": "pod2",
-        }
+        assert config.get_all_aliases() == {"pod-1": "id1", "pod-2": "id2"}
+
+    def test_idempotent_add(self):
+        """Test adding the same alias+pod_id is idempotent."""
+        config = AppConfig()
+        assert config.add_alias("pod-1", "id1")
+        assert config.add_alias("pod-1", "id1")  # same, should succeed
+
+    def test_add_conflict_requires_force(self):
+        """Test adding a different pod_id for same alias requires force."""
+        config = AppConfig()
+        config.add_alias("pod-1", "id1")
+        assert not config.add_alias("pod-1", "id2")
+        assert config.add_alias("pod-1", "id2", force=True)

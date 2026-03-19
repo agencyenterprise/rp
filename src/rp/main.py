@@ -43,25 +43,9 @@ from rp.core.models import AppConfig
 def complete_alias(incomplete: str) -> list[str]:
     """Provide tab completion for pod aliases."""
     try:
-        # Load config from disk
         with POD_CONFIG_FILE.open("r") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                if (
-                    "aliases" in data
-                    or "pod_templates" in data
-                    or "pod_metadata" in data
-                ):
-                    config = AppConfig.model_validate(data)
-                else:
-                    config = AppConfig(
-                        aliases={str(k): str(v) for k, v in data.items()}
-                    )
-            else:
-                config = AppConfig()
-
-        aliases = list(config.get_all_aliases().keys())
-        return [alias for alias in aliases if alias.startswith(incomplete)]
+            config = AppConfig.model_validate(json.load(f))
+        return [a for a in config.get_all_aliases() if a.startswith(incomplete)]
     except Exception:
         return []
 
@@ -69,25 +53,9 @@ def complete_alias(incomplete: str) -> list[str]:
 def complete_template(incomplete: str) -> list[str]:
     """Provide tab completion for template identifiers."""
     try:
-        # Load config from disk
         with POD_CONFIG_FILE.open("r") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                if (
-                    "aliases" in data
-                    or "pod_templates" in data
-                    or "pod_metadata" in data
-                ):
-                    config = AppConfig.model_validate(data)
-                else:
-                    config = AppConfig(
-                        aliases={str(k): str(v) for k, v in data.items()}
-                    )
-            else:
-                config = AppConfig()
-
-        templates = list(config.pod_templates.keys())
-        return [template for template in templates if template.startswith(incomplete)]
+            config = AppConfig.model_validate(json.load(f))
+        return [t for t in config.pod_templates if t.startswith(incomplete)]
     except Exception:
         return []
 

@@ -217,11 +217,8 @@ class PodMetadata(BaseModel):
 class AppConfig(BaseModel):
     """Application configuration and state."""
 
-    aliases: dict[str, str] = Field(
-        default_factory=dict, description="Alias to pod ID mappings (legacy format)"
-    )
     pod_metadata: dict[str, PodMetadata] = Field(
-        default_factory=dict, description="Pod metadata by alias (new format)"
+        default_factory=dict, description="Pod metadata by alias"
     )
     pod_templates: dict[str, PodTemplate] = Field(
         default_factory=dict, description="Pod templates by identifier"
@@ -229,7 +226,6 @@ class AppConfig(BaseModel):
 
     def add_alias(self, alias: str, pod_id: str, force: bool = False) -> bool:
         """Add or update an alias mapping."""
-        # Check both legacy and new format
         existing_id = self.get_pod_id(alias)
         if existing_id is not None:
             if existing_id == pod_id:
@@ -237,35 +233,25 @@ class AppConfig(BaseModel):
             if not force:
                 return False
 
-        # Migrate to new format
-        if alias in self.aliases:
-            del self.aliases[alias]
-
         self.pod_metadata[alias] = PodMetadata(pod_id=pod_id)
         return True
 
     def remove_alias(self, alias: str) -> str | None:
         """Remove an alias mapping, return the pod ID if it existed."""
-        # Try new format first
         if alias in self.pod_metadata:
             metadata = self.pod_metadata.pop(alias)
             return metadata.pod_id
-        # Fall back to legacy format
-        return self.aliases.pop(alias, None)
+        return None
 
     def get_pod_id(self, alias: str) -> str | None:
         """Get pod ID for an alias."""
-        # Try new format first
         if alias in self.pod_metadata:
             return self.pod_metadata[alias].pod_id
-        # Fall back to legacy format
-        return self.aliases.get(alias)
+        return None
 
     def get_all_aliases(self) -> dict[str, str]:
-        """Get all alias->pod_id mappings from both formats."""
-        result = dict(self.aliases)  # Legacy format
-        result.update({alias: meta.pod_id for alias, meta in self.pod_metadata.items()})
-        return result
+        """Get all alias->pod_id mappings."""
+        return {alias: meta.pod_id for alias, meta in self.pod_metadata.items()}
 
     def add_template(self, template: PodTemplate, force: bool = False) -> bool:
         """Add or update a pod template."""

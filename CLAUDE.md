@@ -94,14 +94,13 @@ The codebase follows a layered architecture with clear separation of concerns:
 ### Configuration Storage
 
 All configuration stored in `~/.config/rp/`:
-- `pods.json`: Aliases, templates, managed flag (managed by `AppConfig` model)
+- `pods.json`: Pod metadata (including `managed` flag), templates
 - `secrets.json`: Manifest of secret names stored in Keychain
-- `runpod_api_key`: Legacy API key file (Keychain preferred, file is fallback)
 - `setup.sh`: Script run on non-managed pods during startup (optional, default provided)
 
 ### Key Design Patterns
 
-**Dual Alias Format**: `AppConfig` maintains backward compatibility with legacy dict format while migrating to `PodMetadata`. Methods like `get_all_aliases()` merge both formats. `PodMetadata` includes a `managed` flag to distinguish pods created with `rp up` from bare pods.
+**Pod Metadata**: All aliases stored as `PodMetadata` in `pod_metadata` dict. Includes a `managed` flag to distinguish pods created with `rp up` from bare pods.
 
 **SSH Block Management**: `SSHManager` uses marker comments (`# rp:managed alias=... pod_id=...`) to identify managed blocks in `~/.ssh/config`, allowing safe updates without touching user configs.
 
@@ -179,18 +178,16 @@ def test_something(cli_runner, shared_test_pod):
 - **Python 3.13+** required (uses modern type syntax: `dict[str, str]`, `str | None`)
 - **macOS** for Keychain-based secret management (uses `security` CLI)
 - **SSH config**: Assumes `~/.ssh/config` exists and is writable
-- **API Key**: Priority: env var `RUNPOD_API_KEY` → Keychain → legacy file → interactive prompt (saves to Keychain)
+- **API Key**: Priority: env var `RUNPOD_API_KEY` → Keychain → interactive prompt (saves to Keychain)
 
 ## Common Gotchas
 
 1. **GPU Parsing**: `x` in model name is allowed (e.g., `rtx4090`). Only treated as count separator if prefix is numeric.
 
-2. **AppConfig Migration**: When reading `pods.json`, check for both `aliases` (legacy) and `pod_metadata` (new). When writing config for first time, migrate legacy to new format.
+2. **SSH Config Markers**: Never remove or modify marker comments manually. `SSHManager.remove_host_config()` relies on them to find blocks to remove.
 
-3. **SSH Config Markers**: Never remove or modify marker comments manually. `SSHManager.remove_host_config()` relies on them to find blocks to remove.
+3. **Template Placeholders**: Only `{i}` placeholder is supported. Validation ensures it exists in `alias_template`.
 
-4. **Template Placeholders**: Only `{i}` placeholder is supported. Validation ensures it exists in `alias_template`.
+4. **Managed vs Bare Pods**: `rp up` creates managed pods (with `managed: true` in PodMetadata). `rp start` checks this flag and re-injects secrets + redeploys auto-shutdown on managed pods. Bare pods (`rp create`) use the setup script.
 
-5. **Managed vs Bare Pods**: `rp up` creates managed pods (with `managed: true` in PodMetadata). `rp start` checks this flag and re-injects secrets + redeploys auto-shutdown on managed pods. Bare pods (`rp create`) use the legacy setup script.
-
-6. **SecretManager naming**: The `SecretManager` class has a `set()` method which shadows the Python builtin `set` type. Internal methods use `builtins.set[str]` for type annotations.
+5. **SecretManager naming**: The `SecretManager` class has a `set()` method which shadows the Python builtin `set` type. Internal methods use `builtins.set[str]` for type annotations.

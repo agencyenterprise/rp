@@ -11,7 +11,7 @@ uv tool install https://github.com/Arrrlex/rp.git
 rp --install-completion  # optional tab completion
 ```
 
-API key priority: `RUNPOD_API_KEY` env var → macOS Keychain → `~/.config/rp/runpod_api_key` file → interactive prompt (saves to Keychain).
+API key priority: `RUNPOD_API_KEY` env var → macOS Keychain → interactive prompt (saves to Keychain).
 
 ---
 
@@ -158,14 +158,12 @@ All config in `~/.config/rp/`:
 |------|---------|
 | `pods.json` | Aliases, pod metadata (including `managed` flag), templates |
 | `secrets.json` | Manifest of secret names stored in Keychain |
-| `runpod_api_key` | Legacy API key file (Keychain preferred) |
 | `setup.sh` | Script run on bare pods during create/start |
 
 ### pods.json
 
 ```json
 {
-  "aliases": {},
   "pod_metadata": {
     "my-pod": { "pod_id": "89qgenjznh5t2j", "managed": true }
   },
@@ -180,7 +178,7 @@ All config in `~/.config/rp/`:
 }
 ```
 
-`aliases` is legacy format (plain `alias → pod_id`). New entries use `pod_metadata`. Both are merged by `get_all_aliases()`.
+Each alias maps to a `PodMetadata` with `pod_id` and `managed` flag.
 
 ### SSH Config
 

@@ -31,22 +31,29 @@ console = Console()
 
 def setup_api_client() -> RunPodAPIClient:
     """Set up RunPod API client with authentication."""
-    # Priority: env var, Keychain, stored file (legacy), interactive prompt
-    api_key = None
+    from rp.core.secret_manager import SecretManager
 
+    api_key = None
+    sm = SecretManager()
+
+    # 1. Environment variable (highest priority)
     if candidate := os.environ.get("RUNPOD_API_KEY"):
         api_key = candidate
-    else:
-        from rp.core.secret_manager import SecretManager
 
-        sm = SecretManager()
+    # 2. Keychain
+    if not api_key:
         api_key = sm.get("RUNPOD_API_KEY")
 
+    # 3. Migrate legacy file to Keychain if it exists
     if not api_key and API_KEY_FILE.exists():
         api_key = API_KEY_FILE.read_text().strip()
+        if api_key:
+            sm.set("RUNPOD_API_KEY", api_key)
+            API_KEY_FILE.unlink()
+            console.print("🔐 Migrated RunPod API key from file to macOS Keychain.")
 
+    # 4. Interactive prompt
     if not api_key:
-        # Interactive prompt — save to Keychain
         try:
             api_key = getpass.getpass("Enter RunPod API key: ").strip()
         except (EOFError, KeyboardInterrupt):
@@ -57,9 +64,6 @@ def setup_api_client() -> RunPodAPIClient:
             typer.echo("❌ Empty API key provided.", err=True)
             raise typer.Exit(1)
 
-        from rp.core.secret_manager import SecretManager
-
-        sm = SecretManager()
         sm.set("RUNPOD_API_KEY", api_key)
         console.print("🔐 Saved RunPod API key to macOS Keychain.")
 

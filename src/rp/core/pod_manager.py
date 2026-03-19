@@ -45,20 +45,8 @@ class PodManager:
         try:
             with POD_CONFIG_FILE.open("r") as f:
                 data = json.load(f)
-                # Handle legacy format (simple dict) and new format (AppConfig)
                 if isinstance(data, dict):
-                    if (
-                        "aliases" in data
-                        or "pod_templates" in data
-                        or "pod_metadata" in data
-                    ):
-                        # New AppConfig format
-                        return AppConfig.model_validate(data)
-                    else:
-                        # Legacy format - just aliases
-                        return AppConfig(
-                            aliases={str(k): str(v) for k, v in data.items()}
-                        )
+                    return AppConfig.model_validate(data)
                 return AppConfig()
         except (FileNotFoundError, json.JSONDecodeError):
             return AppConfig()
