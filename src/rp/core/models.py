@@ -19,15 +19,6 @@ class PodStatus(str, Enum):
     INVALID = "invalid"
 
 
-class TaskStatus(str, Enum):
-    """Enumeration of possible task statuses."""
-
-    PENDING = "pending"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
 class GPUSpec(BaseModel):
     """GPU specification for pod creation."""
 
@@ -142,33 +133,6 @@ class Pod(BaseModel):
         )
 
 
-class ScheduleTask(BaseModel):
-    """Represents a scheduled task."""
-
-    id: str = Field(description="Unique task identifier")
-    action: str = Field(description="Action to perform (e.g., 'stop')")
-    alias: str = Field(description="Pod alias to act upon")
-    when_epoch: int = Field(description="Unix timestamp when to execute")
-    status: TaskStatus = Field(default=TaskStatus.PENDING, description="Task status")
-    created_at: str = Field(description="ISO timestamp when task was created")
-    last_error: str | None = Field(None, description="Last error message if failed")
-
-    @property
-    def when_datetime(self) -> datetime:
-        """Get execution time as datetime object."""
-        return datetime.fromtimestamp(self.when_epoch)
-
-    def is_due(self, current_epoch: int | None = None) -> bool:
-        """Check if task is due for execution."""
-        if self.status != TaskStatus.PENDING:
-            return False
-        if current_epoch is None:
-            import time
-
-            current_epoch = int(time.time())
-        return self.when_epoch <= current_epoch
-
-
 class SSHConfig(BaseModel):
     """Represents SSH configuration for a pod."""
 
@@ -215,12 +179,6 @@ class PodCreateRequest(BaseModel):
     ports: str = Field(default="22/tcp,8888/http", description="Port configuration")
 
 
-class PodConfig(BaseModel):
-    """Per-pod configuration settings."""
-
-    path: str | None = Field(None, description="Default working directory path")
-
-
 class PodTemplate(BaseModel):
     """Template for creating pods with predefined configurations."""
 
@@ -238,9 +196,6 @@ class PodTemplate(BaseModel):
     image: str | None = Field(
         default=None, description="Docker image to use (None uses default)"
     )
-    config: PodConfig = Field(
-        default_factory=PodConfig, description="Default pod configuration"
-    )
 
     @field_validator("alias_template")
     @classmethod
@@ -251,25 +206,19 @@ class PodTemplate(BaseModel):
 
 
 class PodMetadata(BaseModel):
-    """Pod metadata including ID and optional configuration."""
+    """Pod metadata including ID."""
 
     pod_id: str = Field(description="RunPod instance ID")
-    config: PodConfig = Field(
-        default_factory=PodConfig, description="Pod configuration"
+    managed: bool = Field(
+        default=False, description="Whether this pod was created with 'rp up'"
     )
 
 
 class AppConfig(BaseModel):
     """Application configuration and state."""
 
-    aliases: dict[str, str] = Field(
-        default_factory=dict, description="Alias to pod ID mappings (legacy format)"
-    )
     pod_metadata: dict[str, PodMetadata] = Field(
-        default_factory=dict, description="Pod metadata by alias (new format)"
-    )
-    scheduled_tasks: list[ScheduleTask] = Field(
-        default_factory=list, description="Scheduled tasks"
+        default_factory=dict, description="Pod metadata by alias"
     )
     pod_templates: dict[str, PodTemplate] = Field(
         default_factory=dict, description="Pod templates by identifier"
@@ -277,7 +226,6 @@ class AppConfig(BaseModel):
 
     def add_alias(self, alias: str, pod_id: str, force: bool = False) -> bool:
         """Add or update an alias mapping."""
-        # Check both legacy and new format
         existing_id = self.get_pod_id(alias)
         if existing_id is not None:
             if existing_id == pod_id:
@@ -285,76 +233,25 @@ class AppConfig(BaseModel):
             if not force:
                 return False
 
-        # Migrate to new format
-        if alias in self.aliases:
-            del self.aliases[alias]
-
         self.pod_metadata[alias] = PodMetadata(pod_id=pod_id)
         return True
 
     def remove_alias(self, alias: str) -> str | None:
         """Remove an alias mapping, return the pod ID if it existed."""
-        # Try new format first
         if alias in self.pod_metadata:
             metadata = self.pod_metadata.pop(alias)
             return metadata.pod_id
-        # Fall back to legacy format
-        return self.aliases.pop(alias, None)
+        return None
 
     def get_pod_id(self, alias: str) -> str | None:
         """Get pod ID for an alias."""
-        # Try new format first
         if alias in self.pod_metadata:
             return self.pod_metadata[alias].pod_id
-        # Fall back to legacy format
-        return self.aliases.get(alias)
-
-    def get_pod_config(self, alias: str) -> PodConfig | None:
-        """Get pod configuration for an alias."""
-        if alias in self.pod_metadata:
-            return self.pod_metadata[alias].config
         return None
 
-    def set_pod_config_value(self, alias: str, key: str, value: str | None) -> bool:
-        """Set a configuration value for a pod. Returns True if successful."""
-        # Migrate from legacy format if needed
-        if alias in self.aliases and alias not in self.pod_metadata:
-            pod_id = self.aliases.pop(alias)
-            self.pod_metadata[alias] = PodMetadata(pod_id=pod_id)
-
-        if alias not in self.pod_metadata:
-            return False
-
-        # Set the config value
-        if key == "path":
-            self.pod_metadata[alias].config.path = value
-            return True
-
-        return False
-
     def get_all_aliases(self) -> dict[str, str]:
-        """Get all alias->pod_id mappings from both formats."""
-        result = dict(self.aliases)  # Legacy format
-        result.update({alias: meta.pod_id for alias, meta in self.pod_metadata.items()})
-        return result
-
-    def add_task(self, task: ScheduleTask) -> None:
-        """Add a scheduled task."""
-        self.scheduled_tasks.append(task)
-
-    def get_pending_tasks(self, current_epoch: int | None = None) -> list[ScheduleTask]:
-        """Get tasks that are due for execution."""
-        return [task for task in self.scheduled_tasks if task.is_due(current_epoch)]
-
-    def clean_completed_tasks(self) -> int:
-        """Remove completed and cancelled tasks and return count removed."""
-        original_count = len(self.scheduled_tasks)
-        self.scheduled_tasks = [
-            t
-            for t in self.scheduled_tasks
-            if t.status not in {TaskStatus.COMPLETED, TaskStatus.CANCELLED}
-        ]
-        return original_count - len(self.scheduled_tasks)
+        """Get all alias->pod_id mappings."""
+        return {alias: meta.pod_id for alias, meta in self.pod_metadata.items()}
 
     def add_template(self, template: PodTemplate, force: bool = False) -> bool:
         """Add or update a pod template."""

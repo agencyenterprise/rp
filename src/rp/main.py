@@ -5,7 +5,6 @@ This module provides the main application entry point and command-line interface
 using the refactored service layer architecture.
 """
 
-import contextlib
 import json
 
 import click
@@ -13,53 +12,40 @@ import typer
 from typer.core import TyperGroup
 
 from rp.cli.commands import (
+    claude_command,
     clean_command,
     code_command,
-    config_command,
     create_command,
-    cursor_command,
     destroy_command,
     list_command,
-    schedule_cancel_command,
-    schedule_list_command,
-    scheduler_tick_command,
+    logs_command,
+    run_command,
+    secrets_list_command,
+    secrets_remove_command,
+    secrets_set_command,
     shell_command,
     show_command,
     start_command,
+    status_command,
     stop_command,
     template_create_command,
     template_delete_command,
     template_list_command,
     track_command,
     untrack_command,
+    up_command,
 )
+from rp.cli.utils import console
 from rp.config import POD_CONFIG_FILE
 from rp.core.models import AppConfig
-from rp.core.scheduler import Scheduler
 
 
 def complete_alias(incomplete: str) -> list[str]:
     """Provide tab completion for pod aliases."""
     try:
-        # Load config from disk
         with POD_CONFIG_FILE.open("r") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                if (
-                    "aliases" in data
-                    or "pod_templates" in data
-                    or "pod_metadata" in data
-                ):
-                    config = AppConfig.model_validate(data)
-                else:
-                    config = AppConfig(
-                        aliases={str(k): str(v) for k, v in data.items()}
-                    )
-            else:
-                config = AppConfig()
-
-        aliases = list(config.get_all_aliases().keys())
-        return [alias for alias in aliases if alias.startswith(incomplete)]
+            config = AppConfig.model_validate(json.load(f))
+        return [a for a in config.get_all_aliases() if a.startswith(incomplete)]
     except Exception:
         return []
 
@@ -67,25 +53,9 @@ def complete_alias(incomplete: str) -> list[str]:
 def complete_template(incomplete: str) -> list[str]:
     """Provide tab completion for template identifiers."""
     try:
-        # Load config from disk
         with POD_CONFIG_FILE.open("r") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                if (
-                    "aliases" in data
-                    or "pod_templates" in data
-                    or "pod_metadata" in data
-                ):
-                    config = AppConfig.model_validate(data)
-                else:
-                    config = AppConfig(
-                        aliases={str(k): str(v) for k, v in data.items()}
-                    )
-            else:
-                config = AppConfig()
-
-        templates = list(config.pod_templates.keys())
-        return [template for template in templates if template.startswith(incomplete)]
+            config = AppConfig.model_validate(json.load(f))
+        return [t for t in config.pod_templates if t.startswith(incomplete)]
     except Exception:
         return []
 
@@ -105,11 +75,11 @@ app = typer.Typer(
     help="RunPod utility for starting and stopping pods", cls=OrderedGroup
 )
 
-# Schedule sub-application
-schedule_app = typer.Typer(help="Manage scheduled tasks")
-
 # Template sub-application
 template_app = typer.Typer(help="Manage pod templates")
+
+# Secrets sub-application
+secrets_app = typer.Typer(help="Manage secrets stored in macOS Keychain")
 
 
 @app.command()
@@ -134,11 +104,6 @@ def create(
         "--image",
         help="Docker image to use (default: runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04)",
     ),
-    config: list[str] = typer.Option(
-        None,
-        "--config",
-        help="Config key=value pairs (e.g., 'path=/workspace/project')",
-    ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite alias if it exists"
     ),
@@ -147,9 +112,27 @@ def create(
     ),
 ):
     """Create a new RunPod instance, add alias, wait for SSH, and run setup scripts."""
-    create_command(
-        alias, gpu, storage, container_disk, template, image, config, force, dry_run
-    )
+    create_command(alias, gpu, storage, container_disk, template, image, force, dry_run)
+
+
+@app.command()
+def up(
+    template: str = typer.Argument(
+        None,
+        help="Template identifier to use",
+        autocompletion=complete_template,
+    ),
+    alias: str = typer.Option(None, "--alias", help="SSH host alias to assign"),
+    gpu: str = typer.Option(None, "--gpu", help="GPU spec like '2xA100'"),
+    storage: str = typer.Option(
+        None, "--storage", help="Volume size like '500GB' or '1TB'"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Overwrite alias if it exists"
+    ),
+):
+    """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
+    up_command(template, alias, gpu, storage, force)
 
 
 @app.command()
@@ -171,24 +154,9 @@ def stop(
         help="SSH host alias for the pod (e.g., runpod-1, local-saes-1)",
         autocompletion=complete_alias,
     ),
-    at: str | None = typer.Option(
-        None,
-        "--at",
-        help='Schedule at a time, e.g. "22:00", "2025-01-03 09:30", or "tomorrow 09:30"',
-    ),
-    in_: str | None = typer.Option(
-        None,
-        "--in",
-        help='Schedule after a duration, e.g. "3h", "45m", "1d2h30m"',
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show what would happen without performing the action",
-    ),
 ):
-    """Stop a RunPod instance, optionally scheduling for later."""
-    stop_command(host_alias, at, in_, dry_run)
+    """Stop a RunPod instance."""
+    stop_command(host_alias)
 
 
 @app.command()
@@ -253,18 +221,6 @@ def clean():
     clean_command()
 
 
-@schedule_app.command("list")
-def schedule_list():
-    """List scheduled tasks."""
-    schedule_list_command()
-
-
-@schedule_app.command("cancel")
-def schedule_cancel(task_id: str = typer.Argument(..., help="Task id to cancel")):
-    """Cancel a scheduled task by id (sets status to 'cancelled')."""
-    schedule_cancel_command(task_id)
-
-
 @template_app.command("create")
 def template_create(
     identifier: str = typer.Argument(
@@ -287,18 +243,13 @@ def template_create(
         "--image",
         help="Docker image to use (default: runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04)",
     ),
-    config: list[str] = typer.Option(
-        None,
-        "--config",
-        help="Config key=value pairs (e.g., 'path=/workspace/project')",
-    ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite template if it exists"
     ),
 ):
     """Create a new pod template."""
     template_create_command(
-        identifier, alias_pattern, gpu, storage, container_disk, image, config, force
+        identifier, alias_pattern, gpu, storage, container_disk, image, force
     )
 
 
@@ -321,33 +272,12 @@ def template_delete(
     template_delete_command(identifier, missing_ok)
 
 
-@app.command("scheduler-tick")
-def scheduler_tick():
-    """Execute due scheduled tasks (intended to be run by launchd every minute)."""
-    scheduler_tick_command()
-
-
-@app.command()
-def cursor(
-    alias: str = typer.Argument(
-        None, help="Pod alias to connect to", autocompletion=complete_alias
-    ),
-    path: str = typer.Argument(
-        None, help="Remote path to open (uses config default or /workspace)"
-    ),
-):
-    """Open Cursor editor with remote SSH connection to pod."""
-    cursor_command(alias, path)
-
-
 @app.command()
 def code(
     alias: str = typer.Argument(
         None, help="Pod alias to connect to", autocompletion=complete_alias
     ),
-    path: str = typer.Argument(
-        None, help="Remote path to open (uses config default or /workspace)"
-    ),
+    path: str = typer.Argument(None, help="Remote path to open (default: /workspace)"),
 ):
     """Open VS Code editor with remote SSH connection to pod."""
     code_command(alias, path)
@@ -363,36 +293,85 @@ def shell(
     shell_command(alias)
 
 
-@app.command()
-def config(
+@app.command(
+    "run",
+    context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
+)
+def run(
+    ctx: typer.Context,
     alias: str = typer.Argument(
-        None, help="Pod alias to configure", autocompletion=complete_alias
-    ),
-    args: list[str] = typer.Argument(
-        None, help="Either 'key' to get value, or 'key=value' pairs to set"
+        ..., help="Pod alias to run command on", autocompletion=complete_alias
     ),
 ):
-    """Get or set configuration for a pod.
+    """Execute a command on a remote pod via SSH.
 
-    Examples:
-      rp config my-pod path                # Get value
-      rp config my-pod path=/workspace/x   # Set value
-      rp config my-pod path=/x path2=/y    # Set multiple
+    Example: rp run my-pod -- ls -la /workspace
     """
-    config_command(alias, args or [])
+    args = [a for a in ctx.args if a != "--"]
+    if not args:
+        console.print(
+            "❌ No command specified. Usage: rp run <alias> <command>", style="red"
+        )
+        raise typer.Exit(1)
+    run_command(alias, args)
+
+
+@app.command("claude")
+def claude_cmd(
+    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
+    prompt: str = typer.Option(
+        None, "--prompt", "-p", help="Prompt for autonomous mode"
+    ),
+    working_dir: str = typer.Option(
+        None, "--dir", "-d", help="Working directory on pod"
+    ),
+):
+    """Launch remote Claude on a pod."""
+    claude_command(alias, prompt, working_dir)
+
+
+@app.command()
+def status(
+    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
+):
+    """Check remote Claude progress on a pod."""
+    status_command(alias)
+
+
+@app.command()
+def logs(
+    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
+):
+    """Sync and view logs from a remote pod."""
+    logs_command(alias)
+
+
+@secrets_app.command("list")
+def secrets_list():
+    """List managed secrets."""
+    secrets_list_command()
+
+
+@secrets_app.command("set")
+def secrets_set(
+    name: str = typer.Argument(..., help="Secret name (e.g., HF_TOKEN)"),
+):
+    """Store a secret in macOS Keychain."""
+    secrets_set_command(name)
+
+
+@secrets_app.command("remove")
+def secrets_remove(
+    name: str = typer.Argument(..., help="Secret name to remove"),
+):
+    """Remove a secret from macOS Keychain."""
+    secrets_remove_command(name)
 
 
 def main():
-    """Main entry point with auto-cleanup of completed tasks."""
-    # Auto-clean completed tasks before any command runs
-    with contextlib.suppress(Exception):
-        scheduler = Scheduler()
-        scheduler.clean_completed_tasks()
-        # Keep this silent in normal output
-
-    # Mount sub-apps
-    app.add_typer(schedule_app, name="schedule")
+    """Main entry point."""
     app.add_typer(template_app, name="template")
+    app.add_typer(secrets_app, name="secrets")
     app()
 
 

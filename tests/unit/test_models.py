@@ -13,9 +13,7 @@ from rp.core.models import (
     PodCreateRequest,
     PodStatus,
     PodTemplate,
-    ScheduleTask,
     SSHConfig,
-    TaskStatus,
 )
 
 
@@ -90,43 +88,6 @@ class TestPod:
 
         pod = Pod.from_runpod_response("test-alias", response)
         assert pod.status == PodStatus.STOPPED
-
-
-class TestScheduleTask:
-    """Test ScheduleTask model."""
-
-    def test_schedule_task_creation(self):
-        """Test creating a schedule task."""
-        task = ScheduleTask(
-            id="task123",
-            action="stop",
-            alias="test-pod",
-            when_epoch=1642636800,  # 2022-01-20
-            created_at="2022-01-19T12:00:00Z",
-        )
-
-        assert task.id == "task123"
-        assert task.action == "stop"
-        assert task.status == TaskStatus.PENDING
-
-    def test_is_due(self):
-        """Test task due checking."""
-        task = ScheduleTask(
-            id="task123",
-            action="stop",
-            alias="test-pod",
-            when_epoch=1642636800,
-            created_at="2022-01-19T12:00:00Z",
-        )
-
-        # Task is due if current time >= when_epoch
-        assert task.is_due(1642636800)  # exactly due
-        assert task.is_due(1642636801)  # past due
-        assert not task.is_due(1642636799)  # not yet due
-
-        # Failed/completed tasks are never due
-        task.status = TaskStatus.FAILED
-        assert not task.is_due(1642636801)
 
 
 class TestSSHConfig:
@@ -263,8 +224,7 @@ class TestAppConfig:
         """Test creating empty configuration."""
         config = AppConfig()
 
-        assert config.aliases == {}
-        assert config.scheduled_tasks == []
+        assert config.pod_metadata == {}
         assert config.pod_templates == {}
 
     def test_add_template(self):
@@ -335,39 +295,21 @@ class TestAppConfig:
         assert config.find_next_alias_index("test-{i}") == 1
 
         # Add some aliases
-        config.aliases["test-1"] = "pod1"
-        config.aliases["test-3"] = "pod3"
+        config.add_alias("test-1", "pod1")
+        config.add_alias("test-3", "pod3")
 
         # Should return 2 (lowest available)
         assert config.find_next_alias_index("test-{i}") == 2
 
         # Add test-2
-        config.aliases["test-2"] = "pod2"
+        config.add_alias("test-2", "pod2")
 
         # Should now return 4
         assert config.find_next_alias_index("test-{i}") == 4
 
         # Test with different template format
-        config.aliases["prefix-1-suffix"] = "pod4"
+        config.add_alias("prefix-1-suffix", "pod4")
         assert config.find_next_alias_index("prefix-{i}-suffix") == 2
-
-
-class TestPodConfig:
-    """Test pod configuration model."""
-
-    def test_empty_config(self):
-        """Test creating empty pod config."""
-        from rp.core.models import PodConfig
-
-        config = PodConfig()
-        assert config.path is None
-
-    def test_with_path(self):
-        """Test creating pod config with path."""
-        from rp.core.models import PodConfig
-
-        config = PodConfig(path="/workspace/my-project")
-        assert config.path == "/workspace/my-project"
 
 
 class TestPodMetadata:
@@ -379,51 +321,37 @@ class TestPodMetadata:
 
         metadata = PodMetadata(pod_id="pod123")
         assert metadata.pod_id == "pod123"
-        assert metadata.config.path is None
+        assert metadata.managed is False
 
-    def test_metadata_with_config(self):
-        """Test creating pod metadata with config."""
-        from rp.core.models import PodConfig, PodMetadata
+    def test_managed_metadata(self):
+        """Test creating managed pod metadata."""
+        from rp.core.models import PodMetadata
 
-        metadata = PodMetadata(
-            pod_id="pod123",
-            config=PodConfig(path="/workspace/project"),
-        )
+        metadata = PodMetadata(pod_id="pod123", managed=True)
         assert metadata.pod_id == "pod123"
-        assert metadata.config.path == "/workspace/project"
+        assert metadata.managed is True
 
 
-class TestAppConfigMigration:
-    """Test AppConfig legacy format migration."""
+class TestAppConfigAliases:
+    """Test AppConfig alias operations."""
 
-    def test_get_pod_config_value_from_new_format(self):
-        """Test getting pod config value from new format."""
+    def test_add_and_get_aliases(self):
+        """Test adding aliases and retrieving them."""
         config = AppConfig()
-        config.add_alias("test-1", "pod123")
-        config.set_pod_config_value("test-1", "path", "/workspace/project")
+        config.add_alias("pod-1", "id1")
+        config.add_alias("pod-2", "id2")
 
-        value = config.get_pod_config("test-1")
-        assert value is not None
-        assert value.path == "/workspace/project"
+        assert config.get_all_aliases() == {"pod-1": "id1", "pod-2": "id2"}
 
-    def test_set_pod_config_migrates_legacy(self):
-        """Test that setting config migrates legacy alias."""
-        config = AppConfig(aliases={"test-1": "pod123"})
+    def test_idempotent_add(self):
+        """Test adding the same alias+pod_id is idempotent."""
+        config = AppConfig()
+        assert config.add_alias("pod-1", "id1")
+        assert config.add_alias("pod-1", "id1")  # same, should succeed
 
-        assert config.set_pod_config_value("test-1", "path", "/workspace/project")
-
-        # Should migrate to new format
-        assert "test-1" in config.pod_metadata
-        assert "test-1" not in config.aliases
-        assert config.pod_metadata["test-1"].config.path == "/workspace/project"
-
-    def test_get_all_aliases_both_formats(self):
-        """Test getting all aliases from both formats."""
-        config = AppConfig(aliases={"legacy-1": "pod1"})
-        config.add_alias("new-1", "pod2")
-
-        all_aliases = config.get_all_aliases()
-        assert all_aliases == {
-            "legacy-1": "pod1",
-            "new-1": "pod2",
-        }
+    def test_add_conflict_requires_force(self):
+        """Test adding a different pod_id for same alias requires force."""
+        config = AppConfig()
+        config.add_alias("pod-1", "id1")
+        assert not config.add_alias("pod-1", "id2")
+        assert config.add_alias("pod-1", "id2", force=True)

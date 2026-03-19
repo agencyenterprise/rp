@@ -96,31 +96,6 @@ class APIError(RunPodCLIError):
         return cls("Received unexpected response from RunPod API", details=details)
 
 
-class SchedulingError(RunPodCLIError):
-    """Errors related to task scheduling."""
-
-    @classmethod
-    def invalid_time_format(cls, time_str: str, reason: str) -> "SchedulingError":
-        """Create error for invalid time format."""
-        return cls(f"Invalid time format: {time_str}", details=reason)
-
-    @classmethod
-    def task_not_found(cls, task_id: str) -> "SchedulingError":
-        """Create error for unknown task ID."""
-        return cls(
-            f"Task not found: {task_id}",
-            details="Use 'rp schedule list' to see available tasks.",
-        )
-
-    @classmethod
-    def conflicting_options(cls, option1: str, option2: str) -> "SchedulingError":
-        """Create error for conflicting scheduling options."""
-        return cls(
-            f"{option1} and {option2} are mutually exclusive",
-            details="Please use only one scheduling option.",
-        )
-
-
 class SSHError(RunPodCLIError):
     """Errors related to SSH configuration."""
 

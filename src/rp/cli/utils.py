@@ -5,7 +5,6 @@ This module provides common functionality for the command-line interface,
 including error handling, API setup, and output formatting.
 """
 
-import contextlib
 import getpass
 import os
 import subprocess
@@ -20,7 +19,7 @@ from rich.table import Table
 from rich.text import Text
 
 from rp.config import API_KEY_FILE, SETUP_FILE
-from rp.core.models import GPUSpec, Pod, PodConfig, PodStatus, ScheduleTask
+from rp.core.models import GPUSpec, Pod, PodStatus
 from rp.utils.api_client import RunPodAPIClient
 from rp.utils.errors import RunPodCLIError
 
@@ -32,15 +31,29 @@ console = Console()
 
 def setup_api_client() -> RunPodAPIClient:
     """Set up RunPod API client with authentication."""
-    # Priority: env var, stored file, interactive prompt
-    api_key = None
+    from rp.core.secret_manager import SecretManager
 
+    api_key = None
+    sm = SecretManager()
+
+    # 1. Environment variable (highest priority)
     if candidate := os.environ.get("RUNPOD_API_KEY"):
         api_key = candidate
-    elif API_KEY_FILE.exists():
+
+    # 2. Keychain
+    if not api_key:
+        api_key = sm.get("RUNPOD_API_KEY")
+
+    # 3. Migrate legacy file to Keychain if it exists
+    if not api_key and API_KEY_FILE.exists():
         api_key = API_KEY_FILE.read_text().strip()
-    else:
-        # Interactive prompt
+        if api_key:
+            sm.set("RUNPOD_API_KEY", api_key)
+            API_KEY_FILE.unlink()
+            console.print("🔐 Migrated RunPod API key from file to macOS Keychain.")
+
+    # 4. Interactive prompt
+    if not api_key:
         try:
             api_key = getpass.getpass("Enter RunPod API key: ").strip()
         except (EOFError, KeyboardInterrupt):
@@ -51,15 +64,8 @@ def setup_api_client() -> RunPodAPIClient:
             typer.echo("❌ Empty API key provided.", err=True)
             raise typer.Exit(1)
 
-        # Save for future use
-        API_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with API_KEY_FILE.open("w") as f:
-            f.write(api_key + "\n")
-
-        with contextlib.suppress(Exception):
-            os.chmod(API_KEY_FILE, 0o600)
-
-        console.print("🔐 Saved RunPod API key for future use.")
+        sm.set("RUNPOD_API_KEY", api_key)
+        console.print("🔐 Saved RunPod API key to macOS Keychain.")
 
     return RunPodAPIClient(api_key)
 
@@ -189,37 +195,6 @@ def parse_storage_spec(storage_string: str) -> int:
     return gb
 
 
-def parse_config_flags(config_flags: list[str] | None) -> PodConfig:
-    """Parse --config flags into a PodConfig object.
-
-    Each flag should be in the format 'key=value', e.g., 'path=/workspace/project'.
-    Supported keys: path
-    """
-    config = PodConfig()
-
-    if not config_flags:
-        return config
-
-    for flag in config_flags:
-        if "=" not in flag:
-            raise typer.BadParameter(
-                f"Invalid --config format: '{flag}'. Expected 'key=value' (e.g., 'path=/workspace/project')"
-            )
-
-        key, value = flag.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-
-        if key == "path":
-            config.path = value if value else None
-        else:
-            raise typer.BadParameter(
-                f"Unknown config key: '{key}'. Supported keys: path"
-            )
-
-    return config
-
-
 def display_pods_table(pods: list[Pod]) -> None:
     """Display a table of pods."""
     if not pods:
@@ -243,40 +218,6 @@ def display_pods_table(pods: list[Pod]) -> None:
 
         row = [pod.alias, pod.id, status_text]
         table.add_row(*row)
-
-    console.print(table)
-
-
-def display_schedule_table(tasks: list[ScheduleTask]) -> None:
-    """Display a table of scheduled tasks."""
-    if not tasks:
-        console.print("[yellow]No scheduled tasks.[/yellow]")
-        return
-
-    table = Table(show_header=True, header_style="bold cyan")
-    table.add_column("ID", style="magenta")
-    table.add_column("Action", style="white")
-    table.add_column("Alias", style="green")
-    table.add_column("When (local)", style="white")
-    table.add_column("Status", style="white")
-
-    for task in tasks:
-        when_local = task.when_datetime.strftime("%Y-%m-%d %H:%M %Z")
-
-        if task.status.value == "pending":
-            status_text = Text(task.status.value, style="bold green")
-        elif task.status.value == "failed":
-            status_text = Text(task.status.value, style="yellow")
-        else:
-            status_text = Text(task.status.value, style="dim")
-
-        table.add_row(
-            task.id,
-            task.action,
-            task.alias,
-            when_local,
-            status_text,
-        )
 
     console.print(table)
 

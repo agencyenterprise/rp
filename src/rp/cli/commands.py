@@ -5,18 +5,13 @@ This module implements all the CLI commands using the refactored service layer,
 providing clean separation between CLI interface and business logic.
 """
 
-from datetime import datetime, timedelta
-
 import typer
-from dateutil import tz
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from rp.cli.utils import (
     console,
     display_pods_table,
-    display_schedule_table,
     handle_cli_error,
-    parse_config_flags,
     parse_gpu_spec,
     parse_storage_spec,
     run_setup_scripts,
@@ -25,13 +20,11 @@ from rp.cli.utils import (
 )
 from rp.core.models import PodCreateRequest, PodTemplate, SSHConfig
 from rp.core.pod_manager import PodManager
-from rp.core.scheduler import Scheduler
 from rp.core.ssh_manager import SSHManager
-from rp.utils.errors import AliasError, APIError, PodError, SchedulingError
+from rp.utils.errors import AliasError, APIError, PodError
 
 # Initialize services (will be properly injected in production)
 _pod_manager: PodManager | None = None
-_scheduler: Scheduler | None = None
 _ssh_manager: SSHManager | None = None
 
 
@@ -44,14 +37,6 @@ def get_pod_manager() -> PodManager:
     return _pod_manager
 
 
-def get_scheduler() -> Scheduler:
-    """Get or create Scheduler instance."""
-    global _scheduler  # noqa: PLW0603
-    if _scheduler is None:
-        _scheduler = Scheduler()
-    return _scheduler
-
-
 def get_ssh_manager() -> SSHManager:
     """Get or create SSHManager instance."""
     global _ssh_manager  # noqa: PLW0603
@@ -61,11 +46,10 @@ def get_ssh_manager() -> SSHManager:
 
 
 def _auto_clean() -> None:
-    """Silently perform cleanup tasks (invalid aliases, SSH blocks, completed tasks)."""
+    """Silently perform cleanup tasks (invalid aliases, SSH blocks)."""
     try:
         pod_manager = get_pod_manager()
         ssh_manager = get_ssh_manager()
-        scheduler = get_scheduler()
 
         # Clean invalid aliases
         pod_manager.clean_invalid_aliases()
@@ -73,9 +57,6 @@ def _auto_clean() -> None:
         # Prune SSH blocks
         valid_aliases = set(pod_manager.aliases.keys())
         ssh_manager.prune_managed_blocks(valid_aliases)
-
-        # Clean completed/cancelled scheduled tasks
-        scheduler.clean_completed_tasks()
     except Exception:
         # Silently fail - don't disrupt the user's workflow
         pass
@@ -88,7 +69,6 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
     container_disk: str | None = None,
     template: str | None = None,
     image: str | None = None,
-    config: list[str] | None = None,
     force: bool = False,
     dry_run: bool = False,
 ) -> None:
@@ -207,14 +187,6 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
 
         console.print(f"✅ Saved alias '[bold]{final_alias}[/bold]' -> {pod.id}")
 
-        # Apply config values if provided via --config flag
-        if config:
-            pod_config = parse_config_flags(config)
-            for key, value in pod_config.model_dump().items():
-                if value is not None:
-                    pod_manager.set_pod_config(final_alias, key, value)
-                    console.print(f"⚙️  Set config '{key}' = '{value}'")
-
         # Configure SSH
         if pod.ip_address and pod.ssh_port:
             console.print("📝 Updating SSH config…")
@@ -242,6 +214,96 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
             )
 
         # Auto-clean invalid aliases and completed tasks
+        _auto_clean()
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
+def up_command(
+    template: str | None = None,
+    alias: str | None = None,
+    gpu: str | None = None,
+    storage: str | None = None,
+    force: bool = False,
+) -> None:
+    """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
+    try:
+        pod_manager = get_pod_manager()
+
+        if not template and not (alias and gpu and storage):
+            raise ValueError(
+                "Must specify either a template or all of (--alias, --gpu, --storage)"
+            )
+
+        # Create the pod using existing create logic
+        if template:
+            console.print(
+                f"🚀 Creating managed pod from template '[bold]{template}[/bold]'"
+            )
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                TimeElapsedColumn(),
+                transient=True,
+                console=console,
+            ) as progress:
+                task = progress.add_task("Creating pod from template…", total=None)
+                pod = pod_manager.create_pod_from_template(
+                    template, force, dry_run=False, alias_override=alias
+                )
+                progress.update(task, description="Pod created successfully")
+            final_alias = pod.alias
+        else:
+            assert alias is not None
+            assert gpu is not None
+            assert storage is not None
+
+            gpu_spec = parse_gpu_spec(gpu)
+            volume_gb = parse_storage_spec(storage)
+            request = PodCreateRequest(
+                alias=alias, gpu_spec=gpu_spec, volume_gb=volume_gb, force=force
+            )
+            console.print(f"🚀 Creating managed pod '[bold]{alias}[/bold]'")
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                TimeElapsedColumn(),
+                transient=True,
+                console=console,
+            ) as progress:
+                task = progress.add_task("Creating pod…", total=None)
+                pod = pod_manager.create_pod(request)
+                progress.update(task, description="Pod created successfully")
+            final_alias = alias
+
+        # Mark as managed
+        pod_manager.set_managed(final_alias, managed=True)
+
+        console.print(f"✅ Saved alias '[bold]{final_alias}[/bold]' -> {pod.id}")
+
+        # Configure SSH
+        if pod.ip_address and pod.ssh_port:
+            ssh_config = SSHConfig(
+                alias=final_alias,
+                pod_id=pod.id,
+                hostname=pod.ip_address,
+                port=pod.ssh_port,
+            )
+            ssh_manager = get_ssh_manager()
+            ssh_manager.update_host_config(ssh_config)
+            console.print("✅ SSH config updated.")
+
+        # Run opinionated setup
+        from rp.core.pod_setup import PodSetup
+
+        console.print("⚙️  Running managed setup…")
+        setup = PodSetup(final_alias, pod.id, console)
+        setup.run_full_setup()
+
+        console.print(
+            f"🎉 Managed pod '[bold green]{final_alias}[/bold green]' is ready."
+        )
         _auto_clean()
 
     except Exception as e:
@@ -284,74 +346,31 @@ def start_command(alias: str | None) -> None:
             ssh_manager.update_host_config(ssh_config)
             console.print("✅ SSH config updated successfully.")
 
-        # Run setup scripts
-        run_setup_scripts(alias)
+        # Check if this is a managed pod — re-inject secrets and auto-shutdown
+        metadata = pod_manager.config.pod_metadata.get(alias)
+        if metadata and metadata.managed:
+            from rp.core.pod_setup import PodSetup
 
-        # Auto-clean invalid aliases and completed tasks
+            console.print("⚙️  Re-running managed setup…")
+            setup = PodSetup(alias, pod.id, console)
+            setup.run_managed_restart_setup()
+        else:
+            # Run legacy setup scripts for non-managed pods
+            run_setup_scripts(alias)
+
         _auto_clean()
 
     except Exception as e:
         handle_cli_error(e)
 
 
-def stop_command(
-    alias: str | None,
-    at: str | None = None,
-    in_: str | None = None,
-    dry_run: bool = False,
-) -> None:
-    """Stop a RunPod instance, optionally scheduling for later."""
+def stop_command(alias: str | None) -> None:
+    """Stop a RunPod instance."""
     try:
-        # Validate alias exists
         pod_manager = get_pod_manager()
         alias = select_pod_if_needed(alias, pod_manager)
         pod_manager.get_pod_id(alias)  # Raises if not found
 
-        if at and in_:
-            raise SchedulingError.conflicting_options("--at", "--in")
-
-        if at or in_:
-            scheduler = get_scheduler()
-
-            if at:
-                when_dt = scheduler.parse_time_string(at)
-            else:
-                seconds = scheduler.parse_duration_string(in_ or "")
-                when_dt = datetime.now(tz.tzlocal()) + timedelta(seconds=seconds)
-
-            local_str = when_dt.strftime("%Y-%m-%d %H:%M %Z")
-            now = datetime.now(tz.tzlocal())
-            rel_seconds = max(0, int((when_dt - now).total_seconds()))
-            rel_desc = (
-                f"in {rel_seconds // 3600}h{(rel_seconds % 3600) // 60:02d}m"
-                if rel_seconds >= 60
-                else f"in {rel_seconds}s"
-            )
-
-            if dry_run:
-                console.print(
-                    f"⏰ [bold]DRY RUN[/bold] Would schedule stop of '[bold]{alias}[/bold]' "
-                    f"at {local_str} ({rel_desc})."
-                )
-                return
-
-            task = scheduler.schedule_stop(alias, when_dt)
-            console.print(
-                f"⏰ Scheduled stop of '[bold]{alias}[/bold]' at [bold]{local_str}[/bold] "
-                f"({rel_desc}). [dim](id={task.id})[/dim]"
-            )
-
-            # Ensure scheduler is running on macOS
-            scheduler.ensure_macos_scheduler_installed(console)
-            return
-
-        if dry_run:
-            console.print(
-                f"[bold]DRY RUN[/bold] Would stop '[bold]{alias}[/bold]' now."
-            )
-            return
-
-        # Immediate stop
         console.print(f"🛑 Stopping pod '[bold]{alias}[/bold]'…")
         pod_manager.stop_pod(alias)
         console.print("✅ Pod has been stopped.")
@@ -362,7 +381,6 @@ def stop_command(
         if removed:
             console.print(f"🧹 Removed SSH config block for '[bold]{alias}[/bold]'")
 
-        # Auto-clean invalid aliases and completed tasks
         _auto_clean()
 
     except Exception as e:
@@ -492,17 +510,9 @@ def show_command(alias: str | None) -> None:
     try:
         pod_manager = get_pod_manager()
         alias = select_pod_if_needed(alias, pod_manager)
-        scheduler = get_scheduler()
 
         # Get pod details
         pod = pod_manager.get_pod(alias)
-
-        # Get any scheduled tasks for this pod
-        scheduled_tasks = [
-            t
-            for t in scheduler.tasks
-            if t.alias == alias and t.status.value == "pending"
-        ]
 
         console.print(f"\n[bold cyan]Pod Details: {alias}[/bold cyan]")
         console.print("=" * 60)
@@ -544,23 +554,6 @@ def show_command(alias: str | None) -> None:
             )
             console.print(f"[bold]Image:[/bold]     {image_display}")
 
-        # Configuration
-        config_values = pod_manager.get_pod_config(alias)
-        if any(v is not None for v in config_values.values()):
-            console.print("\n[bold cyan]Configuration:[/bold cyan]")
-            for key, value in config_values.items():
-                if value is not None:
-                    console.print(f"  {key}: [bold]{value}[/bold]")
-
-        # Scheduled tasks
-        if scheduled_tasks:
-            console.print("\n[bold yellow]Scheduled Tasks:[/bold yellow]")
-            for task in scheduled_tasks:
-                when_str = task.when_datetime.strftime("%Y-%m-%d %H:%M")
-                console.print(
-                    f"  • {task.action} at {when_str} [dim](id={task.id[:8]})[/dim]"
-                )
-
         console.print("=" * 60 + "\n")
 
     except Exception as e:
@@ -592,74 +585,8 @@ def clean_command() -> None:
         else:
             console.print("✅ No orphaned SSH config blocks to prune.")
 
-        # Clean completed/cancelled scheduled tasks
-        scheduler = get_scheduler()
-        removed_tasks = scheduler.clean_completed_tasks()
-
-        if removed_tasks:
-            console.print(
-                f"🗑️  Removed [bold]{removed_tasks}[/bold] completed/cancelled scheduled task(s)."
-            )
-
     except Exception as e:
         handle_cli_error(e)
-
-
-def schedule_list_command() -> None:
-    """List scheduled tasks."""
-    try:
-        scheduler = get_scheduler()
-        display_schedule_table(scheduler.tasks)
-
-    except Exception as e:
-        handle_cli_error(e)
-
-
-def schedule_cancel_command(task_id: str) -> None:
-    """Cancel a scheduled task."""
-    try:
-        scheduler = get_scheduler()
-        task = scheduler.cancel_task(task_id)
-
-        if task.status.value in {"completed", "cancelled"}:
-            console.print(
-                f"[yellow]Task {task_id} is already {task.status.value}.[/yellow]"
-            )
-        else:
-            console.print(f"✅ Cancelled task [bold]{task_id}[/bold].")
-
-    except Exception as e:
-        handle_cli_error(e)
-
-
-def scheduler_tick_command() -> None:
-    """Execute due scheduled tasks (called by launchd)."""
-    try:
-        scheduler = get_scheduler()
-        due_tasks = scheduler.get_due_tasks()
-
-        if not due_tasks:
-            return
-
-        # Initialize pod manager for task execution
-        pod_manager = get_pod_manager()
-
-        for task in due_tasks:
-            try:
-                if task.action == "stop":
-                    pod_manager.stop_pod(task.alias)
-
-                    # Remove SSH config
-                    ssh_manager = get_ssh_manager()
-                    ssh_manager.remove_host_config(task.alias)
-
-                    scheduler.mark_task_completed(task.id)
-            except Exception as e:
-                scheduler.mark_task_failed(task.id, str(e))
-
-    except Exception:
-        # Silently fail for scheduler tick to avoid noise
-        pass
 
 
 def template_create_command(
@@ -669,32 +596,24 @@ def template_create_command(
     storage: str,
     container_disk: str | None = None,
     image: str | None = None,
-    config: list[str] | None = None,
     force: bool = False,
 ) -> None:
     """Create a new pod template."""
     try:
-        template_kwargs = {
+        template_kwargs: dict[str, str] = {
             "identifier": identifier,
             "alias_template": alias_template,
             "gpu_spec": gpu,
             "storage_spec": storage,
         }
 
-        # Add container disk if specified
         if container_disk is not None:
             template_kwargs["container_disk_spec"] = container_disk
 
-        # Add image if specified
         if image is not None:
             template_kwargs["image"] = image
 
-        # Parse config flags if provided
-        if config:
-            pod_config = parse_config_flags(config)
-            template_kwargs["config"] = pod_config
-
-        template = PodTemplate(**template_kwargs)  # type: ignore[arg-type]
+        template = PodTemplate(**template_kwargs)
 
         pod_manager = get_pod_manager()
         pod_manager.add_template(template, force)
@@ -707,9 +626,6 @@ def template_create_command(
             console.print(f"   Container disk: {container_disk}")
         if image is not None:
             console.print(f"   Image: {image}")
-        if config:
-            for config_item in config:
-                console.print(f"   Config: {config_item}")
 
     except Exception as e:
         handle_cli_error(e)
@@ -779,36 +695,6 @@ def template_delete_command(identifier: str, missing_ok: bool = False) -> None:
         handle_cli_error(e)
 
 
-def cursor_command(alias: str | None, path: str | None = None) -> None:
-    """Open Cursor editor with remote SSH connection to pod."""
-    try:
-        pod_manager = get_pod_manager()
-        alias = select_pod_if_needed(alias, pod_manager)
-        pod_manager.get_pod_id(alias)  # Validate alias exists
-
-        import subprocess
-
-        # Use configured default if path not provided
-        if path is None:
-            configured_path = pod_manager.get_pod_config_value(alias, "path")
-            path = configured_path or "/workspace"
-
-        remote_uri = f"vscode-remote://ssh-remote+{alias}{path}"
-        console.print(f"🖥️  Opening Cursor at '[bold]{alias}:{path}[/bold]'…")
-
-        subprocess.run(["cursor", "--folder-uri", remote_uri], check=True)
-        console.print("✅ Cursor opened successfully.")
-
-    except FileNotFoundError:
-        console.print(
-            "❌ Cursor command not found. Please ensure Cursor is installed and in your PATH.",
-            style="red",
-        )
-        raise typer.Exit(1) from None
-    except Exception as e:
-        handle_cli_error(e)
-
-
 def code_command(alias: str | None, path: str | None = None) -> None:
     """Open VS Code editor with remote SSH connection to pod."""
     try:
@@ -818,10 +704,8 @@ def code_command(alias: str | None, path: str | None = None) -> None:
 
         import subprocess
 
-        # Use configured default if path not provided
         if path is None:
-            configured_path = pod_manager.get_pod_config_value(alias, "path")
-            path = configured_path or "/workspace"
+            path = "/workspace"
 
         remote_uri = f"vscode-remote://ssh-remote+{alias}{path}"
         console.print(f"🖥️  Opening VS Code at '[bold]{alias}:{path}[/bold]'…")
@@ -848,118 +732,166 @@ def shell_command(alias: str | None) -> None:
 
         import subprocess
 
-        # Get configured path to cd into
-        configured_path = pod_manager.get_pod_config_value(alias, "path")
-
-        if configured_path:
-            console.print(f"🐚 Connecting to '[bold]{alias}:{configured_path}[/bold]'…")
-            # Use ssh -t to allocate a PTY for the cd command
-            subprocess.run(
-                ["ssh", "-A", "-t", alias, f"cd {configured_path} && exec bash -l"],
-                check=False,
-            )
-        else:
-            console.print(f"🐚 Connecting to '[bold]{alias}[/bold]'…")
-            subprocess.run(["ssh", "-A", alias], check=False)
+        console.print(f"🐚 Connecting to '[bold]{alias}[/bold]'…")
+        subprocess.run(["ssh", "-A", alias], check=False)
 
     except Exception as e:
         handle_cli_error(e)
 
 
-def config_command(alias: str | None, args: list[str]) -> None:
-    """Get or set configuration values for a pod.
+def run_command(alias: str | None, command: list[str]) -> None:
+    """Execute a command on a remote pod via SSH."""
+    try:
+        import shlex
+        import subprocess
 
-    Usage:
-        rp config <alias> <key>              # Get single value
-        rp config <alias> key=value          # Set single value
-        rp config <alias> key1=val1 key2=val2  # Set multiple values
-    """
+        pod_manager = get_pod_manager()
+        alias = select_pod_if_needed(alias, pod_manager)
+        pod_manager.get_pod_id(alias)  # Validate alias exists
+
+        full_command = " ".join(command)
+        console.print(f"Running on '[bold]{alias}[/bold]': {full_command}")
+        subprocess.run(
+            ["ssh", "-A", alias, f"bash -l -c {shlex.quote(full_command)}"],
+            check=False,
+        )
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
+def secrets_list_command() -> None:
+    """List managed secrets."""
+    try:
+        from rp.core.secret_manager import SecretManager
+
+        sm = SecretManager()
+        names = sm.list_names()
+
+        if not names:
+            console.print(
+                "[yellow]No secrets stored. Use 'rp secrets set <name>' to add one.[/yellow]"
+            )
+            return
+
+        from rich.table import Table
+
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("Name", style="green")
+        table.add_column("Set", style="white")
+
+        for name in names:
+            has_value = "yes" if sm.exists(name) else "missing from keychain"
+            table.add_row(name, has_value)
+
+        console.print(table)
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
+def secrets_set_command(name: str) -> None:
+    """Store a secret in macOS Keychain."""
+    try:
+        import getpass
+
+        from rp.core.secret_manager import SecretManager
+
+        value = getpass.getpass(f"Enter value for '{name}': ").strip()
+        if not value:
+            console.print("❌ Empty value provided.", style="red")
+            raise typer.Exit(1)
+
+        sm = SecretManager()
+        sm.set(name, value)
+        console.print(f"✅ Stored '{name}' in macOS Keychain.")
+
+    except (EOFError, KeyboardInterrupt):
+        console.print("\n❌ Cancelled.", style="red")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        handle_cli_error(e)
+
+
+def secrets_remove_command(name: str) -> None:
+    """Remove a secret from macOS Keychain."""
+    try:
+        from rp.core.secret_manager import SecretManager
+
+        sm = SecretManager()
+        if sm.remove(name):
+            console.print(f"✅ Removed '{name}' from macOS Keychain.")
+        else:
+            console.print(f"ℹ️  '{name}' not found in Keychain.")
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
+def claude_command(
+    alias: str | None,
+    prompt: str | None = None,
+    working_dir: str | None = None,
+) -> None:
+    """Launch remote Claude on a managed pod."""
     try:
         pod_manager = get_pod_manager()
         alias = select_pod_if_needed(alias, pod_manager)
-        valid_keys = ["path"]
+        pod_id = pod_manager.get_pod_id(alias)
 
-        if not args:
-            # No args - show error
-            console.print(
-                "❌ Usage: rp config <alias> <key> OR rp config <alias> key=value [key2=value2 ...]",
-                style="red",
-            )
-            raise typer.Exit(1) from None
+        from rp.core.claude_remote import ClaudeRemote
 
-        # Check if any arg contains '=' (set mode) or all are plain keys (get mode)
-        has_equals = any("=" in arg for arg in args)
+        remote = ClaudeRemote(alias, pod_id, console)
+        remote.launch(
+            working_dir=working_dir or "/workspace",
+            prompt=prompt,
+        )
 
-        if has_equals:
-            # Set mode: parse key=value pairs
-            if any("=" not in arg for arg in args):
-                console.print(
-                    "❌ Cannot mix key=value and plain key arguments",
-                    style="red",
-                )
-                raise typer.Exit(1) from None
+    except Exception as e:
+        handle_cli_error(e)
 
-            # Parse and validate all pairs first
-            pairs = []
-            for arg in args:
-                if "=" not in arg:
-                    continue
-                key, _, value = arg.partition("=")
-                key = key.strip()
-                value = value.strip()
 
-                if key not in valid_keys:
-                    console.print(
-                        f"❌ Invalid config key: {key}. Valid keys: {', '.join(valid_keys)}",
-                        style="red",
-                    )
-                    raise typer.Exit(1) from None
+def status_command(alias: str | None) -> None:
+    """Check remote Claude progress on a pod."""
+    try:
+        pod_manager = get_pod_manager()
+        alias = select_pod_if_needed(alias, pod_manager)
+        pod_id = pod_manager.get_pod_id(alias)
 
-                pairs.append((key, value if value else None))
+        from rp.core.claude_remote import ClaudeRemote
 
-            # Set all values and show feedback
-            for key, value in pairs:
-                old_value = pod_manager.get_pod_config_value(alias, key)
-                pod_manager.set_pod_config(alias, key, value)
+        remote = ClaudeRemote(alias, pod_id, console)
+        status = remote.get_status()
 
-                if value is None:
-                    console.print(f"✅ Cleared '{key}' for '[bold]{alias}[/bold]'")
-                elif old_value is None:
-                    console.print(
-                        f"✅ Set '{key}' = '{value}' for '[bold]{alias}[/bold]' (new)"
-                    )
-                elif old_value != value:
-                    console.print(
-                        f"✅ Set '{key}' = '{value}' for '[bold]{alias}[/bold]' (was '{old_value}')"
-                    )
-                else:
-                    console.print(
-                        f"ℹ️  '{key}' already set to '{value}' for '[bold]{alias}[/bold]'"
-                    )
+        if status["running"]:
+            console.print("[bold green]STATUS: running[/bold green]")
         else:
-            # Get mode: retrieve and display values
-            if len(args) > 1:
-                console.print(
-                    "❌ To get multiple values, use: rp show <alias>",
-                    style="red",
-                )
-                raise typer.Exit(1) from None
+            console.print("[bold yellow]STATUS: finished[/bold yellow]")
 
-            key = args[0].strip()
+        if status["output"]:
+            console.print("\n--- Recent output ---")
+            console.print(status["output"])
 
-            if key not in valid_keys:
-                console.print(
-                    f"❌ Invalid config key: {key}. Valid keys: {', '.join(valid_keys)}",
-                    style="red",
-                )
-                raise typer.Exit(1) from None
+        if status["report"]:
+            console.print("\n--- Report ---")
+            console.print(status["report"])
 
-            value = pod_manager.get_pod_config_value(alias, key)
+    except Exception as e:
+        handle_cli_error(e)
 
-            if value is None:
-                console.print(f"{key}: [dim](not set)[/dim]")
-            else:
-                console.print(f"{key}: [bold]{value}[/bold]")
+
+def logs_command(alias: str | None) -> None:
+    """Sync and view logs from a remote pod."""
+    try:
+        pod_manager = get_pod_manager()
+        alias = select_pod_if_needed(alias, pod_manager)
+        pod_id = pod_manager.get_pod_id(alias)
+
+        from rp.core.claude_remote import ClaudeRemote
+
+        remote = ClaudeRemote(alias, pod_id, console)
+        local_dir = remote.sync_logs()
+        console.print(f"✅ Logs synced to [bold]{local_dir}[/bold]")
 
     except Exception as e:
         handle_cli_error(e)

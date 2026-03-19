@@ -5,7 +5,6 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "python-dateutil>=2.9.0.post0",
     "pydantic>=2.0",
     "rich>=14.1.0",
     "runpod>=1.7.13",

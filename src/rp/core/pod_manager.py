@@ -45,20 +45,8 @@ class PodManager:
         try:
             with POD_CONFIG_FILE.open("r") as f:
                 data = json.load(f)
-                # Handle legacy format (simple dict) and new format (AppConfig)
                 if isinstance(data, dict):
-                    if (
-                        "aliases" in data
-                        or "pod_templates" in data
-                        or "scheduled_tasks" in data
-                    ):
-                        # New AppConfig format
-                        return AppConfig.model_validate(data)
-                    else:
-                        # Legacy format - just aliases
-                        return AppConfig(
-                            aliases={str(k): str(v) for k, v in data.items()}
-                        )
+                    return AppConfig.model_validate(data)
                 return AppConfig()
         except (FileNotFoundError, json.JSONDecodeError):
             return AppConfig()
@@ -75,6 +63,12 @@ class PodManager:
         if not self.config.add_alias(alias, pod_id, force):
             raise AliasError.already_exists(alias)
         self._save_config()
+
+    def set_managed(self, alias: str, *, managed: bool) -> None:
+        """Set the managed flag on a pod's metadata."""
+        if alias in self.config.pod_metadata:
+            self.config.pod_metadata[alias].managed = managed
+            self._save_config()
 
     def remove_alias(self, alias: str, missing_ok: bool = False) -> str:
         """Remove an alias mapping, returning the pod ID."""
@@ -165,10 +159,8 @@ class PodManager:
 
         self.api_client.start_pod(pod_id)
 
-        # Wait for pod to be ready
-        pod_data = self.api_client.wait_for_pod_ready(
-            pod_id, timeout=120
-        )  # 2 min timeout for start
+        # Wait for pod to be ready (SSH port available)
+        pod_data = self.api_client.wait_for_pod_ready(pod_id, timeout=300)
 
         return Pod.from_runpod_response(alias, pod_data)
 
@@ -326,40 +318,4 @@ class PodManager:
 
         request = PodCreateRequest(**request_kwargs)  # type: ignore[arg-type]
 
-        # Create the pod
-        pod = self.create_pod(request)
-
-        # Apply template config to the pod
-        for key, value in template.config.model_dump().items():
-            if value is not None:
-                self.set_pod_config(alias, key, value)
-
-        return pod
-
-    def set_pod_config(self, alias: str, key: str, value: str | None) -> None:
-        """Set a configuration value for a pod."""
-        if not self.config.set_pod_config_value(alias, key, value):
-            available = list(self.aliases.keys())
-            raise AliasError.not_found(alias, available)
-        self._save_config()
-
-    def get_pod_config_value(self, alias: str, key: str) -> str | None:
-        """Get a configuration value for a pod."""
-        pod_config = self.config.get_pod_config(alias)
-        if pod_config is None:
-            available = list(self.aliases.keys())
-            raise AliasError.not_found(alias, available)
-
-        if key == "path":
-            return pod_config.path
-
-        return None
-
-    def get_pod_config(self, alias: str) -> dict[str, str | None]:
-        """Get all configuration values for a pod."""
-        pod_config = self.config.get_pod_config(alias)
-        if pod_config is None:
-            available = list(self.aliases.keys())
-            raise AliasError.not_found(alias, available)
-
-        return {"path": pod_config.path}
+        return self.create_pod(request)
