@@ -147,15 +147,14 @@ class RunPodAPIClient:
             raise PodError.operation_failed("terminate", pod_id, str(e)) from e
 
     def wait_for_pod_ready(self, pod_id: str, timeout: int = 600) -> dict[str, Any]:
-        """Wait for a pod to be ready with network information."""
+        """Wait for a pod to be ready with network information (SSH port available)."""
         start_time = time.time()
 
         while time.time() - start_time < timeout:
             try:
                 pod_data = self.get_pod(pod_id)
-                runtime = pod_data.get("runtime")
-                if runtime is not None and isinstance(runtime, dict):
-                    # Pod has network info, it's ready
+                ip, port = self.extract_network_info(pod_data)
+                if ip and port:
                     return pod_data
             except PodError:
                 # Pod not found or invalid, keep trying

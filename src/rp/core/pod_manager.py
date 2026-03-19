@@ -159,10 +159,8 @@ class PodManager:
 
         self.api_client.start_pod(pod_id)
 
-        # Wait for pod to be ready
-        pod_data = self.api_client.wait_for_pod_ready(
-            pod_id, timeout=120
-        )  # 2 min timeout for start
+        # Wait for pod to be ready (SSH port available)
+        pod_data = self.api_client.wait_for_pod_ready(pod_id, timeout=300)
 
         return Pod.from_runpod_response(alias, pod_data)
 

@@ -28,6 +28,7 @@ class PodSetup:
 
     def run_full_setup(self) -> None:
         """Run complete opinionated setup (tools, user, secrets, auto-shutdown)."""
+        self._wait_for_ssh()
         self.install_tools()
         self.create_non_root_user()
         self.inject_secrets()
@@ -35,6 +36,7 @@ class PodSetup:
 
     def run_managed_restart_setup(self) -> None:
         """Re-run setup needed after a managed pod restarts (secrets + auto-shutdown)."""
+        self._wait_for_ssh()
         self.inject_secrets()
         self.deploy_auto_shutdown()
 
@@ -136,9 +138,58 @@ pgrep -x cron >/dev/null 2>&1 || {{
 }}
 """)
 
-    def _ssh_run_script(self, script: str) -> None:
+    def _wait_for_ssh(self, timeout: int = 300, interval: int = 5) -> None:
+        """Wait until SSH is accepting connections, updating SSH config if port changes."""
+        import time
+
+        from rp.core.models import SSHConfig
+        from rp.core.ssh_manager import SSHManager
+        from rp.utils.api_client import RunPodAPIClient
+
+        self.console.print("    Waiting for SSH...")
+        start = time.time()
+        last_port = None
+
+        while time.time() - start < timeout:
+            # Re-check the API for current network info (port can change on restart)
+            try:
+                api_client = RunPodAPIClient()
+                pod_data = api_client.get_pod(self.pod_id)
+                ip, port = api_client.extract_network_info(pod_data)
+                if ip and port and port != last_port:
+                    last_port = port
+                    ssh_config = SSHConfig(
+                        alias=self.ssh_alias,
+                        pod_id=self.pod_id,
+                        hostname=ip,
+                        port=port,
+                    )
+                    SSHManager().update_host_config(ssh_config)
+            except Exception:
+                pass
+
+            result = subprocess.run(
+                [
+                    "ssh",
+                    "-o",
+                    "StrictHostKeyChecking=accept-new",
+                    "-o",
+                    "ConnectTimeout=5",
+                    self.ssh_alias,
+                    "echo ok",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                return
+            time.sleep(interval)
+        raise TimeoutError(f"SSH not ready on {self.ssh_alias} after {timeout}s")
+
+    def _ssh_run_script(self, script: str) -> subprocess.CompletedProcess:
         """Run a bash script on the pod via SSH."""
-        subprocess.run(
+        result = subprocess.run(
             [
                 "ssh",
                 "-o",
@@ -149,8 +200,16 @@ pgrep -x cron >/dev/null 2>&1 || {{
             input=script,
             text=True,
             capture_output=True,
-            check=True,
+            check=False,
         )
+        if result.returncode != 0:
+            raise subprocess.CalledProcessError(
+                result.returncode,
+                f"ssh {self.ssh_alias} bash -s",
+                result.stdout,
+                result.stderr,
+            )
+        return result
 
     def _scp_to_pod(self, local_path: str, remote_path: str) -> None:
         """Copy a file to the pod via SCP."""
