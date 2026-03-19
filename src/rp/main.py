@@ -307,12 +307,13 @@ def run(
 
     Example: rp run my-pod -- ls -la /workspace
     """
-    if not ctx.args:
+    args = [a for a in ctx.args if a != "--"]
+    if not args:
         console.print(
-            "❌ No command specified. Usage: rp run <alias> -- <command>", style="red"
+            "❌ No command specified. Usage: rp run <alias> <command>", style="red"
         )
         raise typer.Exit(1)
-    run_command(alias, ctx.args)
+    run_command(alias, args)
 
 
 @app.command("claude")
