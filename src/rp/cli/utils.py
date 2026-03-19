@@ -5,7 +5,6 @@ This module provides common functionality for the command-line interface,
 including error handling, API setup, and output formatting.
 """
 
-import contextlib
 import getpass
 import os
 import subprocess
@@ -32,15 +31,22 @@ console = Console()
 
 def setup_api_client() -> RunPodAPIClient:
     """Set up RunPod API client with authentication."""
-    # Priority: env var, stored file, interactive prompt
+    # Priority: env var, Keychain, stored file (legacy), interactive prompt
     api_key = None
 
     if candidate := os.environ.get("RUNPOD_API_KEY"):
         api_key = candidate
-    elif API_KEY_FILE.exists():
-        api_key = API_KEY_FILE.read_text().strip()
     else:
-        # Interactive prompt
+        from rp.core.secret_manager import SecretManager
+
+        sm = SecretManager()
+        api_key = sm.get("RUNPOD_API_KEY")
+
+    if not api_key and API_KEY_FILE.exists():
+        api_key = API_KEY_FILE.read_text().strip()
+
+    if not api_key:
+        # Interactive prompt — save to Keychain
         try:
             api_key = getpass.getpass("Enter RunPod API key: ").strip()
         except (EOFError, KeyboardInterrupt):
@@ -51,15 +57,11 @@ def setup_api_client() -> RunPodAPIClient:
             typer.echo("❌ Empty API key provided.", err=True)
             raise typer.Exit(1)
 
-        # Save for future use
-        API_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with API_KEY_FILE.open("w") as f:
-            f.write(api_key + "\n")
+        from rp.core.secret_manager import SecretManager
 
-        with contextlib.suppress(Exception):
-            os.chmod(API_KEY_FILE, 0o600)
-
-        console.print("🔐 Saved RunPod API key for future use.")
+        sm = SecretManager()
+        sm.set("RUNPOD_API_KEY", api_key)
+        console.print("🔐 Saved RunPod API key to macOS Keychain.")
 
     return RunPodAPIClient(api_key)
 

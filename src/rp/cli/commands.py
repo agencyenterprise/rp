@@ -660,3 +660,71 @@ def run_command(alias: str | None, command: list[str]) -> None:
 
     except Exception as e:
         handle_cli_error(e)
+
+
+def secrets_list_command() -> None:
+    """List managed secrets."""
+    try:
+        from rp.core.secret_manager import SecretManager
+
+        sm = SecretManager()
+        names = sm.list_names()
+
+        if not names:
+            console.print(
+                "[yellow]No secrets stored. Use 'rp secrets set <name>' to add one.[/yellow]"
+            )
+            return
+
+        from rich.table import Table
+
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("Name", style="green")
+        table.add_column("Set", style="white")
+
+        for name in names:
+            has_value = "yes" if sm.exists(name) else "missing from keychain"
+            table.add_row(name, has_value)
+
+        console.print(table)
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
+def secrets_set_command(name: str) -> None:
+    """Store a secret in macOS Keychain."""
+    try:
+        import getpass
+
+        from rp.core.secret_manager import SecretManager
+
+        value = getpass.getpass(f"Enter value for '{name}': ").strip()
+        if not value:
+            console.print("❌ Empty value provided.", style="red")
+            raise typer.Exit(1)
+
+        sm = SecretManager()
+        sm.set(name, value)
+        console.print(f"✅ Stored '{name}' in macOS Keychain.")
+
+    except (EOFError, KeyboardInterrupt):
+        console.print("\n❌ Cancelled.", style="red")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        handle_cli_error(e)
+
+
+def secrets_remove_command(name: str) -> None:
+    """Remove a secret from macOS Keychain."""
+    try:
+        from rp.core.secret_manager import SecretManager
+
+        sm = SecretManager()
+        if sm.remove(name):
+            console.print(f"✅ Removed '{name}' from macOS Keychain.")
+        else:
+            console.print(f"ℹ️  '{name}' not found in Keychain.")
+
+    except Exception as e:
+        handle_cli_error(e)

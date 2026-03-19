@@ -18,6 +18,9 @@ from rp.cli.commands import (
     destroy_command,
     list_command,
     run_command,
+    secrets_list_command,
+    secrets_remove_command,
+    secrets_set_command,
     shell_command,
     show_command,
     start_command,
@@ -102,6 +105,9 @@ app = typer.Typer(
 
 # Template sub-application
 template_app = typer.Typer(help="Manage pod templates")
+
+# Secrets sub-application
+secrets_app = typer.Typer(help="Manage secrets stored in macOS Keychain")
 
 
 @app.command()
@@ -317,9 +323,32 @@ def run(
     run_command(alias, ctx.args)
 
 
+@secrets_app.command("list")
+def secrets_list():
+    """List managed secrets."""
+    secrets_list_command()
+
+
+@secrets_app.command("set")
+def secrets_set(
+    name: str = typer.Argument(..., help="Secret name (e.g., HF_TOKEN)"),
+):
+    """Store a secret in macOS Keychain."""
+    secrets_set_command(name)
+
+
+@secrets_app.command("remove")
+def secrets_remove(
+    name: str = typer.Argument(..., help="Secret name to remove"),
+):
+    """Remove a secret from macOS Keychain."""
+    secrets_remove_command(name)
+
+
 def main():
     """Main entry point."""
     app.add_typer(template_app, name="template")
+    app.add_typer(secrets_app, name="secrets")
     app()
 
 
