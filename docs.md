@@ -23,21 +23,24 @@ This document provides comprehensive documentation for `rp`, a RunPod CLI wrappe
 `rp` is a command-line wrapper around the RunPod Python API that provides:
 
 - **Simplified pod management**: Create, start, stop, and destroy GPU pods
+- **Opinionated setup** (`rp up`): Full pod setup with tools, secrets, auto-shutdown, non-root user
 - **Alias system**: Manage pods using memorable names instead of IDs
 - **Template support**: Create reusable pod configurations with automatic numbering
-- **Scheduling**: Schedule pod operations (e.g., stop after 2 hours)
+- **Secret management**: macOS Keychain-based secret storage and injection
+- **Remote Claude**: Launch Claude Code on pods in tmux sessions
 - **SSH integration**: Automatic SSH config management
 - **Setup automation**: Run custom scripts on pod creation/startup
-- **Per-pod configuration**: Store settings like default working directories
-- **Editor integration**: Direct integration with Cursor and SSH shells
+- **Editor integration**: VS Code remote SSH integration
 
 ### Key Features
 
+- Two tiers: low-level (`rp create`) and opinionated (`rp up`) pod management
 - Persistent local configuration stored in `~/.config/rp/`
+- macOS Keychain integration for secret management (`rp secrets`)
 - Automatic SSH configuration management in `~/.ssh/config`
-- Scheduled task execution via macOS launchd (background daemon)
+- Remote Claude sessions with status monitoring and log sync
+- GPU idle auto-shutdown on managed pods (120 min default)
 - Template-based pod creation with auto-incrementing aliases
-- Per-pod configuration for default paths and settings
 
 ---
 

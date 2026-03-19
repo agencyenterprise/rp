@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`rp` is a CLI wrapper around the RunPod Python API for managing GPU pods. It provides pod lifecycle management (create/start/stop/destroy), alias system, template-based deployment, scheduled shutdowns, SSH config management, and setup script automation.
+`rp` is a CLI wrapper around the RunPod Python API for managing GPU pods. It provides two tiers of pod management: low-level (create/start/stop/destroy) and opinionated (`rp up` with full setup, secret injection, auto-shutdown). Also includes remote Claude session management, macOS Keychain secret storage, alias system, template-based deployment, and SSH config management.
 
 **Key documentation**: `docs.md` contains comprehensive technical documentation including all commands, configuration files, and internal behavior. Read this first for complete context.
 
@@ -76,14 +76,16 @@ The codebase follows a layered architecture with clear separation of concerns:
    - `utils.py`: CLI utilities (error handling, parsing, display)
 
 2. **Service Layer** (`src/rp/core/`)
-   - `pod_manager.py`: Pod CRUD operations, template management, per-pod config
-   - `scheduler.py`: Task scheduling, time parsing, macOS launchd integration
+   - `pod_manager.py`: Pod CRUD operations, template management
+   - `pod_setup.py`: Opinionated pod setup (tools, secrets, auto-shutdown, non-root user)
+   - `secret_manager.py`: macOS Keychain secret management
+   - `claude_remote.py`: Remote Claude session management (tmux, OAuth, logs)
    - `ssh_manager.py`: SSH config file manipulation (marker-based block management)
 
 3. **Data Layer** (`src/rp/core/models.py`)
    - Pydantic models for type safety and validation
    - `AppConfig`: Application state with dual alias format (legacy dict + new PodMetadata)
-   - `Pod`, `PodTemplate`, `ScheduleTask`, `SSHConfig`, etc.
+   - `Pod`, `PodTemplate`, `PodMetadata`, `SSHConfig`, etc.
 
 4. **API Layer** (`src/rp/utils/api_client.py`)
    - `RunPodAPIClient`: Wrapper around runpod SDK with error handling
@@ -92,14 +94,14 @@ The codebase follows a layered architecture with clear separation of concerns:
 ### Configuration Storage
 
 All configuration stored in `~/.config/rp/`:
-- `pods.json`: Aliases, templates, per-pod config (managed by `AppConfig` model)
-- `schedule.json`: Scheduled tasks (managed by `Scheduler`)
-- `runpod_api_key`: API key (optional, can use env var)
-- `setup.sh`: Script run on pod during startup (optional, default provided)
+- `pods.json`: Aliases, templates, managed flag (managed by `AppConfig` model)
+- `secrets.json`: Manifest of secret names stored in Keychain
+- `runpod_api_key`: Legacy API key file (Keychain preferred, file is fallback)
+- `setup.sh`: Script run on non-managed pods during startup (optional, default provided)
 
 ### Key Design Patterns
 
-**Dual Alias Format**: `AppConfig` maintains backward compatibility with legacy dict format while migrating to `PodMetadata` for per-pod configuration. Methods like `get_all_aliases()` merge both formats.
+**Dual Alias Format**: `AppConfig` maintains backward compatibility with legacy dict format while migrating to `PodMetadata`. Methods like `get_all_aliases()` merge both formats. `PodMetadata` includes a `managed` flag to distinguish pods created with `rp up` from bare pods.
 
 **SSH Block Management**: `SSHManager` uses marker comments (`# rp:managed alias=... pod_id=...`) to identify managed blocks in `~/.ssh/config`, allowing safe updates without touching user configs.
 
@@ -107,7 +109,7 @@ All configuration stored in `~/.config/rp/`:
 1. Parse string (`[count]xmodel`) into `GPUSpec`
 2. Resolve model substring to RunPod GPU type ID via API, preferring highest VRAM
 
-**Scheduler**: On macOS, creates launchd agent that runs `rp scheduler-tick` every 60 seconds. Tasks stored in `schedule.json` with Unix epoch timestamps.
+**Auto-Shutdown**: Managed pods (`rp up`) get a cron job that checks GPU utilization every 5 minutes. After 120 min of all GPUs at 0%, the pod self-destructs via RunPod REST API.
 
 **Template Auto-numbering**: `find_next_alias_index()` finds lowest `i ≥ 1` where `template.format(i=i)` doesn't exist in aliases.
 
@@ -117,7 +119,7 @@ All configuration stored in `~/.config/rp/`:
 
 Use custom error classes from `utils/errors.py`:
 - `RunPodCLIError` base class with `message`, `details`, `exit_code`
-- Specific errors: `AliasError`, `PodError`, `APIError`, `SSHError`, `SchedulingError`
+- Specific errors: `AliasError`, `PodError`, `APIError`, `SSHError`, `SetupScriptError`
 - CLI commands catch all exceptions and call `handle_cli_error()` for consistent output
 
 ### Service Instantiation
@@ -175,9 +177,9 @@ def test_something(cli_runner, shared_test_pod):
 ## Important Constraints
 
 - **Python 3.13+** required (uses modern type syntax: `dict[str, str]`, `str | None`)
-- **macOS** for automatic scheduling (uses launchd; other platforms require manual `scheduler-tick`)
+- **macOS** for Keychain-based secret management (uses `security` CLI)
 - **SSH config**: Assumes `~/.ssh/config` exists and is writable
-- **API Key**: First run prompts and saves to `~/.config/rp/runpod_api_key` unless `RUNPOD_API_KEY` env var set
+- **API Key**: Priority: env var `RUNPOD_API_KEY` → Keychain → legacy file → interactive prompt (saves to Keychain)
 
 ## Common Gotchas
 
@@ -185,10 +187,10 @@ def test_something(cli_runner, shared_test_pod):
 
 2. **AppConfig Migration**: When reading `pods.json`, check for both `aliases` (legacy) and `pod_metadata` (new). When writing config for first time, migrate legacy to new format.
 
-3. **Scheduler on macOS**: `ensure_macos_scheduler_installed()` must be called when scheduling tasks to create/update launchd agent. Uses `uv run` to execute `scheduler-tick`.
+3. **SSH Config Markers**: Never remove or modify marker comments manually. `SSHManager.remove_host_config()` relies on them to find blocks to remove.
 
-4. **SSH Config Markers**: Never remove or modify marker comments manually. `SSHManager.remove_host_config()` relies on them to find blocks to remove.
+4. **Template Placeholders**: Only `{i}` placeholder is supported. Validation ensures it exists in `alias_template`.
 
-5. **Time Parsing**: `parse_time_string()` handles multiple formats including relative ("tomorrow 09:30"), short form ("22:00" assumes today/tomorrow), and ISO format. Always returns timezone-aware datetime.
+5. **Managed vs Bare Pods**: `rp up` creates managed pods (with `managed: true` in PodMetadata). `rp start` checks this flag and re-injects secrets + redeploys auto-shutdown on managed pods. Bare pods (`rp create`) use the legacy setup script.
 
-6. **Template Placeholders**: Only `{i}` placeholder is supported. Validation ensures it exists in `alias_template`.
+6. **SecretManager naming**: The `SecretManager` class has a `set()` method which shadows the Python builtin `set` type. Internal methods use `builtins.set[str]` for type annotations.
