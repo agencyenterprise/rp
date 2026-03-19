@@ -62,7 +62,7 @@ rp destroy h100-1 -f
 
 ### Templates
 
-Built-in: `h100`, `2h100`, `5090`, `a40` (all 500GB storage, using `{project}_{person}_{i}` naming).
+Built-in: `h100`, `2h100`, `4h100`, `5090` (all 500GB storage, using `{project}_{person}_{i}` naming).
 
 ```bash
 # Set naming variables in ~/.config/rp/.env

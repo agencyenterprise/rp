@@ -146,7 +146,7 @@ rp template create ml --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --st
 
 #### `rp template list` / `rp template delete <id>`
 
-List or delete templates. Built-in defaults: `h100`, `2h100`, `5090`, `a40` (all use `{project}_{person}_{i}` pattern).
+List or delete templates. Built-in defaults: `h100`, `2h100`, `4h100`, `5090` (all use `{project}_{person}_{i}` pattern).
 
 ---
 
