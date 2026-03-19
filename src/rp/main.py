@@ -30,6 +30,7 @@ from rp.cli.commands import (
     template_list_command,
     track_command,
     untrack_command,
+    up_command,
 )
 from rp.cli.utils import console
 from rp.config import POD_CONFIG_FILE
@@ -141,6 +142,26 @@ def create(
 ):
     """Create a new RunPod instance, add alias, wait for SSH, and run setup scripts."""
     create_command(alias, gpu, storage, container_disk, template, image, force, dry_run)
+
+
+@app.command()
+def up(
+    template: str = typer.Argument(
+        None,
+        help="Template identifier to use",
+        autocompletion=complete_template,
+    ),
+    alias: str = typer.Option(None, "--alias", help="SSH host alias to assign"),
+    gpu: str = typer.Option(None, "--gpu", help="GPU spec like '2xA100'"),
+    storage: str = typer.Option(
+        None, "--storage", help="Volume size like '500GB' or '1TB'"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Overwrite alias if it exists"
+    ),
+):
+    """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
+    up_command(template, alias, gpu, storage, force)
 
 
 @app.command()

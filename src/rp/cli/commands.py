@@ -220,6 +220,96 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
         handle_cli_error(e)
 
 
+def up_command(
+    template: str | None = None,
+    alias: str | None = None,
+    gpu: str | None = None,
+    storage: str | None = None,
+    force: bool = False,
+) -> None:
+    """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
+    try:
+        pod_manager = get_pod_manager()
+
+        if not template and not (alias and gpu and storage):
+            raise ValueError(
+                "Must specify either a template or all of (--alias, --gpu, --storage)"
+            )
+
+        # Create the pod using existing create logic
+        if template:
+            console.print(
+                f"🚀 Creating managed pod from template '[bold]{template}[/bold]'"
+            )
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                TimeElapsedColumn(),
+                transient=True,
+                console=console,
+            ) as progress:
+                task = progress.add_task("Creating pod from template…", total=None)
+                pod = pod_manager.create_pod_from_template(
+                    template, force, dry_run=False, alias_override=alias
+                )
+                progress.update(task, description="Pod created successfully")
+            final_alias = pod.alias
+        else:
+            assert alias is not None
+            assert gpu is not None
+            assert storage is not None
+
+            gpu_spec = parse_gpu_spec(gpu)
+            volume_gb = parse_storage_spec(storage)
+            request = PodCreateRequest(
+                alias=alias, gpu_spec=gpu_spec, volume_gb=volume_gb, force=force
+            )
+            console.print(f"🚀 Creating managed pod '[bold]{alias}[/bold]'")
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                TimeElapsedColumn(),
+                transient=True,
+                console=console,
+            ) as progress:
+                task = progress.add_task("Creating pod…", total=None)
+                pod = pod_manager.create_pod(request)
+                progress.update(task, description="Pod created successfully")
+            final_alias = alias
+
+        # Mark as managed
+        pod_manager.set_managed(final_alias, managed=True)
+
+        console.print(f"✅ Saved alias '[bold]{final_alias}[/bold]' -> {pod.id}")
+
+        # Configure SSH
+        if pod.ip_address and pod.ssh_port:
+            ssh_config = SSHConfig(
+                alias=final_alias,
+                pod_id=pod.id,
+                hostname=pod.ip_address,
+                port=pod.ssh_port,
+            )
+            ssh_manager = get_ssh_manager()
+            ssh_manager.update_host_config(ssh_config)
+            console.print("✅ SSH config updated.")
+
+        # Run opinionated setup
+        from rp.core.pod_setup import PodSetup
+
+        console.print("⚙️  Running managed setup…")
+        setup = PodSetup(final_alias, pod.id, console)
+        setup.run_full_setup()
+
+        console.print(
+            f"🎉 Managed pod '[bold green]{final_alias}[/bold green]' is ready."
+        )
+        _auto_clean()
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
 def start_command(alias: str | None) -> None:
     """Start/resume a RunPod instance."""
     try:
@@ -256,10 +346,18 @@ def start_command(alias: str | None) -> None:
             ssh_manager.update_host_config(ssh_config)
             console.print("✅ SSH config updated successfully.")
 
-        # Run setup scripts
-        run_setup_scripts(alias)
+        # Check if this is a managed pod — re-inject secrets and auto-shutdown
+        metadata = pod_manager.config.pod_metadata.get(alias)
+        if metadata and metadata.managed:
+            from rp.core.pod_setup import PodSetup
 
-        # Auto-clean invalid aliases and completed tasks
+            console.print("⚙️  Re-running managed setup…")
+            setup = PodSetup(alias, pod.id, console)
+            setup.run_managed_restart_setup()
+        else:
+            # Run legacy setup scripts for non-managed pods
+            run_setup_scripts(alias)
+
         _auto_clean()
 
     except Exception as e:

@@ -76,6 +76,12 @@ class PodManager:
             raise AliasError.already_exists(alias)
         self._save_config()
 
+    def set_managed(self, alias: str, *, managed: bool) -> None:
+        """Set the managed flag on a pod's metadata."""
+        if alias in self.config.pod_metadata:
+            self.config.pod_metadata[alias].managed = managed
+            self._save_config()
+
     def remove_alias(self, alias: str, missing_ok: bool = False) -> str:
         """Remove an alias mapping, returning the pod ID."""
         pod_id = self.config.remove_alias(alias)
