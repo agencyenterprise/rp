@@ -4,6 +4,7 @@ This module handles the full setup that 'rp up' performs: installing tools,
 creating a non-root user, injecting secrets, and deploying auto-shutdown.
 """
 
+import importlib.resources
 import subprocess
 import tempfile
 from pathlib import Path
@@ -12,7 +13,6 @@ from rich.console import Console
 
 from rp.core.secret_manager import SecretManager
 
-ASSETS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "assets"
 ENV_FILE_ROOT = "/root/.rp-env"
 ENV_FILE_USER = "/home/user/.rp-env"
 
@@ -115,14 +115,16 @@ fi
         """Deploy GPU idle auto-shutdown cron on the pod."""
         self.console.print("    Deploying auto-shutdown cron...")
 
-        auto_shutdown_script = ASSETS_DIR / "auto_shutdown.sh"
-        if not auto_shutdown_script.exists():
-            self.console.print(
-                "    [yellow]Warning: auto_shutdown.sh not found, skipping.[/yellow]"
-            )
-            return
-
-        self._scp_to_pod(str(auto_shutdown_script), "/usr/local/bin/auto_shutdown.sh")
+        auto_shutdown_ref = importlib.resources.files("rp.assets").joinpath(
+            "auto_shutdown.sh"
+        )
+        with importlib.resources.as_file(auto_shutdown_ref) as auto_shutdown_path:
+            if not auto_shutdown_path.exists():
+                self.console.print(
+                    "    [yellow]Warning: auto_shutdown.sh not found, skipping.[/yellow]"
+                )
+                return
+            self._scp_to_pod(str(auto_shutdown_path), "/usr/local/bin/auto_shutdown.sh")
         self._ssh_run_script(f"""
 chmod +x /usr/local/bin/auto_shutdown.sh
 # Set idle threshold via env

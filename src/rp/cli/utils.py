@@ -305,17 +305,17 @@ def ensure_setup_script_exists() -> None:
         console.print("\n❌ Setup cancelled.", style="red")
         raise typer.Exit(1) from None
 
-    # Load default setup script
-    assets_dir = Path(__file__).parent.parent.parent.parent / "assets"
-    default_setup = assets_dir / "default_setup.sh"
+    # Load default setup script from package data
+    import importlib.resources
 
-    if not default_setup.exists():
-        console.print(
-            f"❌ Default setup script not found at {default_setup}", style="red"
-        )
-        raise typer.Exit(1)
-
-    setup_content = default_setup.read_text()
+    default_setup_ref = importlib.resources.files("rp.assets").joinpath(
+        "default_setup.sh"
+    )
+    try:
+        setup_content = default_setup_ref.read_text()
+    except FileNotFoundError:
+        console.print("❌ Default setup script not found in package", style="red")
+        raise typer.Exit(1) from None
 
     # Replace placeholders with user values
     setup_content = setup_content.replace(
