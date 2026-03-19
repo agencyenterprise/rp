@@ -826,3 +826,72 @@ def secrets_remove_command(name: str) -> None:
 
     except Exception as e:
         handle_cli_error(e)
+
+
+def claude_command(
+    alias: str | None,
+    prompt: str | None = None,
+    working_dir: str | None = None,
+) -> None:
+    """Launch remote Claude on a managed pod."""
+    try:
+        pod_manager = get_pod_manager()
+        alias = select_pod_if_needed(alias, pod_manager)
+        pod_id = pod_manager.get_pod_id(alias)
+
+        from rp.core.claude_remote import ClaudeRemote
+
+        remote = ClaudeRemote(alias, pod_id, console)
+        remote.launch(
+            working_dir=working_dir or "/workspace",
+            prompt=prompt,
+        )
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
+def status_command(alias: str | None) -> None:
+    """Check remote Claude progress on a pod."""
+    try:
+        pod_manager = get_pod_manager()
+        alias = select_pod_if_needed(alias, pod_manager)
+        pod_id = pod_manager.get_pod_id(alias)
+
+        from rp.core.claude_remote import ClaudeRemote
+
+        remote = ClaudeRemote(alias, pod_id, console)
+        status = remote.get_status()
+
+        if status["running"]:
+            console.print("[bold green]STATUS: running[/bold green]")
+        else:
+            console.print("[bold yellow]STATUS: finished[/bold yellow]")
+
+        if status["output"]:
+            console.print("\n--- Recent output ---")
+            console.print(status["output"])
+
+        if status["report"]:
+            console.print("\n--- Report ---")
+            console.print(status["report"])
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
+def logs_command(alias: str | None) -> None:
+    """Sync and view logs from a remote pod."""
+    try:
+        pod_manager = get_pod_manager()
+        alias = select_pod_if_needed(alias, pod_manager)
+        pod_id = pod_manager.get_pod_id(alias)
+
+        from rp.core.claude_remote import ClaudeRemote
+
+        remote = ClaudeRemote(alias, pod_id, console)
+        local_dir = remote.sync_logs()
+        console.print(f"✅ Logs synced to [bold]{local_dir}[/bold]")
+
+    except Exception as e:
+        handle_cli_error(e)

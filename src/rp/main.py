@@ -12,11 +12,13 @@ import typer
 from typer.core import TyperGroup
 
 from rp.cli.commands import (
+    claude_command,
     clean_command,
     code_command,
     create_command,
     destroy_command,
     list_command,
+    logs_command,
     run_command,
     secrets_list_command,
     secrets_remove_command,
@@ -24,6 +26,7 @@ from rp.cli.commands import (
     shell_command,
     show_command,
     start_command,
+    status_command,
     stop_command,
     template_create_command,
     template_delete_command,
@@ -342,6 +345,36 @@ def run(
         )
         raise typer.Exit(1)
     run_command(alias, ctx.args)
+
+
+@app.command("claude")
+def claude_cmd(
+    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
+    prompt: str = typer.Option(
+        None, "--prompt", "-p", help="Prompt for autonomous mode"
+    ),
+    working_dir: str = typer.Option(
+        None, "--dir", "-d", help="Working directory on pod"
+    ),
+):
+    """Launch remote Claude on a pod."""
+    claude_command(alias, prompt, working_dir)
+
+
+@app.command()
+def status(
+    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
+):
+    """Check remote Claude progress on a pod."""
+    status_command(alias)
+
+
+@app.command()
+def logs(
+    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
+):
+    """Sync and view logs from a remote pod."""
+    logs_command(alias)
 
 
 @secrets_app.command("list")
