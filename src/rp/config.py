@@ -22,14 +22,6 @@ MARKER_PREFIX = "# rp:managed"
 
 # --- END CONFIGURATION ---
 
-# Scheduler storage and macOS launchd integration
-SCHEDULE_FILE = CONFIG_DIR / "schedule.json"
-LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
-LAUNCHD_LABEL = "com.rp.scheduler"
-LAUNCHD_PLIST = LAUNCH_AGENTS_DIR / f"{LAUNCHD_LABEL}.plist"
-LOGS_DIR = Path.home() / "Library" / "Logs"
-SCHEDULER_LOG_FILE = LOGS_DIR / "rp-scheduler.log"
-
 
 def ensure_config_dir_exists() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)

@@ -20,7 +20,7 @@ from rich.table import Table
 from rich.text import Text
 
 from rp.config import API_KEY_FILE, SETUP_FILE
-from rp.core.models import GPUSpec, Pod, PodConfig, PodStatus, ScheduleTask
+from rp.core.models import GPUSpec, Pod, PodStatus
 from rp.utils.api_client import RunPodAPIClient
 from rp.utils.errors import RunPodCLIError
 
@@ -189,37 +189,6 @@ def parse_storage_spec(storage_string: str) -> int:
     return gb
 
 
-def parse_config_flags(config_flags: list[str] | None) -> PodConfig:
-    """Parse --config flags into a PodConfig object.
-
-    Each flag should be in the format 'key=value', e.g., 'path=/workspace/project'.
-    Supported keys: path
-    """
-    config = PodConfig()
-
-    if not config_flags:
-        return config
-
-    for flag in config_flags:
-        if "=" not in flag:
-            raise typer.BadParameter(
-                f"Invalid --config format: '{flag}'. Expected 'key=value' (e.g., 'path=/workspace/project')"
-            )
-
-        key, value = flag.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-
-        if key == "path":
-            config.path = value if value else None
-        else:
-            raise typer.BadParameter(
-                f"Unknown config key: '{key}'. Supported keys: path"
-            )
-
-    return config
-
-
 def display_pods_table(pods: list[Pod]) -> None:
     """Display a table of pods."""
     if not pods:
@@ -243,40 +212,6 @@ def display_pods_table(pods: list[Pod]) -> None:
 
         row = [pod.alias, pod.id, status_text]
         table.add_row(*row)
-
-    console.print(table)
-
-
-def display_schedule_table(tasks: list[ScheduleTask]) -> None:
-    """Display a table of scheduled tasks."""
-    if not tasks:
-        console.print("[yellow]No scheduled tasks.[/yellow]")
-        return
-
-    table = Table(show_header=True, header_style="bold cyan")
-    table.add_column("ID", style="magenta")
-    table.add_column("Action", style="white")
-    table.add_column("Alias", style="green")
-    table.add_column("When (local)", style="white")
-    table.add_column("Status", style="white")
-
-    for task in tasks:
-        when_local = task.when_datetime.strftime("%Y-%m-%d %H:%M %Z")
-
-        if task.status.value == "pending":
-            status_text = Text(task.status.value, style="bold green")
-        elif task.status.value == "failed":
-            status_text = Text(task.status.value, style="yellow")
-        else:
-            status_text = Text(task.status.value, style="dim")
-
-        table.add_row(
-            task.id,
-            task.action,
-            task.alias,
-            when_local,
-            status_text,
-        )
 
     console.print(table)
 

@@ -27,9 +27,8 @@ def setup_runpod_api():
             api_key = api_key_file.read_text().strip()
 
     if not api_key:
-        pytest.skip(
-            "RUNPOD_API_KEY not found. Set env var or store in ~/.config/rp/runpod_api_key"
-        )
+        msg = "RUNPOD_API_KEY not found. Set env var or store in ~/.config/rp/runpod_api_key"
+        pytest.skip(msg)  # type: ignore[too-many-positional-arguments, invalid-argument-type]
 
     runpod.api_key = api_key
     return api_key
@@ -46,7 +45,6 @@ def temp_config_dir():
         config.CONFIG_DIR = Path(temp_dir) / "rp"
         config.POD_CONFIG_FILE = config.CONFIG_DIR / "pods.json"
         config.API_KEY_FILE = config.CONFIG_DIR / "runpod_api_key"
-        config.SCHEDULE_FILE = config.CONFIG_DIR / "schedule.json"
         config.SETUP_FILE = config.CONFIG_DIR / "setup.sh"
 
         ensure_config_dir_exists()
@@ -62,7 +60,6 @@ def temp_config_dir():
         config.CONFIG_DIR = original_config_dir
         config.POD_CONFIG_FILE = original_config_dir / "pods.json"
         config.API_KEY_FILE = original_config_dir / "runpod_api_key"
-        config.SCHEDULE_FILE = original_config_dir / "schedule.json"
         config.SETUP_FILE = original_config_dir / "setup.sh"
 
 

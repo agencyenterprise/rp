@@ -1256,7 +1256,6 @@ source = { editable = "." }
 dependencies = [
     { name = "pycares" },
     { name = "pydantic" },
-    { name = "python-dateutil" },
     { name = "questionary" },
     { name = "rich" },
     { name = "runpod" },
@@ -1287,7 +1286,6 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.10" },
-    { name = "python-dateutil", specifier = ">=2.9.0.post0" },
     { name = "questionary", specifier = ">=2.1.1" },
     { name = "rich", specifier = ">=14.1.0" },
     { name = "runpod", specifier = ">=1.7.13" },

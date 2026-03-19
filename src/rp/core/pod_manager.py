@@ -50,7 +50,7 @@ class PodManager:
                     if (
                         "aliases" in data
                         or "pod_templates" in data
-                        or "scheduled_tasks" in data
+                        or "pod_metadata" in data
                     ):
                         # New AppConfig format
                         return AppConfig.model_validate(data)
@@ -326,40 +326,4 @@ class PodManager:
 
         request = PodCreateRequest(**request_kwargs)  # type: ignore[arg-type]
 
-        # Create the pod
-        pod = self.create_pod(request)
-
-        # Apply template config to the pod
-        for key, value in template.config.model_dump().items():
-            if value is not None:
-                self.set_pod_config(alias, key, value)
-
-        return pod
-
-    def set_pod_config(self, alias: str, key: str, value: str | None) -> None:
-        """Set a configuration value for a pod."""
-        if not self.config.set_pod_config_value(alias, key, value):
-            available = list(self.aliases.keys())
-            raise AliasError.not_found(alias, available)
-        self._save_config()
-
-    def get_pod_config_value(self, alias: str, key: str) -> str | None:
-        """Get a configuration value for a pod."""
-        pod_config = self.config.get_pod_config(alias)
-        if pod_config is None:
-            available = list(self.aliases.keys())
-            raise AliasError.not_found(alias, available)
-
-        if key == "path":
-            return pod_config.path
-
-        return None
-
-    def get_pod_config(self, alias: str) -> dict[str, str | None]:
-        """Get all configuration values for a pod."""
-        pod_config = self.config.get_pod_config(alias)
-        if pod_config is None:
-            available = list(self.aliases.keys())
-            raise AliasError.not_found(alias, available)
-
-        return {"path": pod_config.path}
+        return self.create_pod(request)
