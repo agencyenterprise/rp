@@ -287,7 +287,8 @@ def up_command(
 
         console.print(f"✅ Saved alias '[bold]{final_alias}[/bold]' -> {pod.id}")
 
-        # Configure SSH
+        # Configure SSH immediately (even before confirming SSH works)
+        # so the user can `ssh` in manually if setup fails
         if pod.ip_address and pod.ssh_port:
             ssh_config = SSHConfig(
                 alias=final_alias,
@@ -299,16 +300,29 @@ def up_command(
             ssh_manager.update_host_config(ssh_config)
             console.print("✅ SSH config updated.")
 
-        # Run opinionated setup
-        from rp.core.pod_setup import PodSetup
+        # Run opinionated setup — if this fails, the pod is still tracked
+        # and the user can retry with `rp setup <alias>`
+        try:
+            from rp.core.pod_setup import PodSetup
 
-        console.print("⚙️  Running managed setup…")
-        setup = PodSetup(final_alias, pod.id, console)
-        setup.run_full_setup()
+            console.print("⚙️  Running managed setup…")
+            setup = PodSetup(final_alias, pod.id, console)
+            setup.run_full_setup()
 
-        console.print(
-            f"🎉 Managed pod '[bold green]{final_alias}[/bold green]' is ready."
-        )
+            console.print(
+                f"🎉 Managed pod '[bold green]{final_alias}[/bold green]' is ready."
+            )
+        except Exception as setup_err:
+            console.print(
+                f"\n[bold yellow]⚠️  Pod created but setup failed:[/bold yellow] {setup_err}",
+            )
+            console.print(
+                f"    Pod is running and tracked as '[bold]{final_alias}[/bold]'."
+            )
+            console.print(
+                f"    Run [bold green]rp setup {final_alias}[/bold green] to retry setup."
+            )
+
         _auto_clean()
 
     except Exception as e:
@@ -765,6 +779,31 @@ def run_command(alias: str | None, command: list[str]) -> None:
         handle_cli_error(e)
 
 
+def setup_command(alias: str | None) -> None:
+    """Re-run pod setup on an existing pod."""
+    try:
+        pod_manager = get_pod_manager()
+        alias = select_pod_if_needed(alias, pod_manager)
+        pod_id = pod_manager.get_pod_id(alias)
+
+        metadata = pod_manager.config.pod_metadata.get(alias)
+
+        if metadata and metadata.managed:
+            from rp.core.pod_setup import PodSetup
+
+            console.print(f"⚙️  Running managed setup on '[bold]{alias}[/bold]'…")
+            setup = PodSetup(alias, pod_id, console)
+            setup.run_full_setup()
+        else:
+            console.print(f"⚙️  Running setup scripts on '[bold]{alias}[/bold]'…")
+            run_setup_scripts(alias)
+
+        console.print(f"✅ Setup complete for '[bold green]{alias}[/bold green]'.")
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
 def secrets_list_command() -> None:
     """List managed secrets."""
     try:
@@ -795,20 +834,31 @@ def secrets_list_command() -> None:
         handle_cli_error(e)
 
 
-def secrets_set_command(name: str) -> None:
+def secrets_set_command(name: str, value: str | None = None) -> None:
     """Store a secret in macOS Keychain."""
     try:
-        import getpass
+        import sys
 
         from rp.core.secret_manager import SecretManager
 
-        value = getpass.getpass(f"Enter value for '{name}': ").strip()
-        if not value:
+        if value is not None:
+            # Value provided via --value flag
+            secret_value = value.strip()
+        elif not sys.stdin.isatty():
+            # Piped input: echo "token" | rp secrets set NAME
+            secret_value = sys.stdin.read().strip()
+        else:
+            # Interactive prompt
+            import getpass
+
+            secret_value = getpass.getpass(f"Enter value for '{name}': ").strip()
+
+        if not secret_value:
             console.print("❌ Empty value provided.", style="red")
             raise typer.Exit(1)
 
         sm = SecretManager()
-        sm.set(name, value)
+        sm.set(name, secret_value)
         console.print(f"✅ Stored '{name}' in macOS Keychain.")
 
     except (EOFError, KeyboardInterrupt):

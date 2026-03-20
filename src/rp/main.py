@@ -23,6 +23,7 @@ from rp.cli.commands import (
     secrets_list_command,
     secrets_remove_command,
     secrets_set_command,
+    setup_command,
     shell_command,
     show_command,
     start_command,
@@ -221,6 +222,18 @@ def clean():
     clean_command()
 
 
+@app.command()
+def setup(
+    alias: str = typer.Argument(
+        None,
+        help="Pod alias to run setup on",
+        autocompletion=complete_alias,
+    ),
+):
+    """Re-run pod setup (tools, secrets, auto-shutdown). Useful for recovery after partial failures."""
+    setup_command(alias)
+
+
 @template_app.command("create")
 def template_create(
     identifier: str = typer.Argument(
@@ -355,9 +368,12 @@ def secrets_list():
 @secrets_app.command("set")
 def secrets_set(
     name: str = typer.Argument(..., help="Secret name (e.g., HF_TOKEN)"),
+    value: str = typer.Option(
+        None, "--value", help="Secret value (if omitted, reads from stdin or prompts)"
+    ),
 ):
     """Store a secret in macOS Keychain."""
-    secrets_set_command(name)
+    secrets_set_command(name, value)
 
 
 @secrets_app.command("remove")
