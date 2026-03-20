@@ -41,7 +41,8 @@ rp destroy h100-1 -f
 | `rp claude <alias> [-p PROMPT] [-d DIR]` | Launch Claude in tmux on pod (autonomous or interactive) |
 | `rp status <alias>` | Check remote Claude progress and read report |
 | `rp logs <alias>` | Sync remote Claude logs locally |
-| `rp secrets list\|set\|remove` | Manage secrets in macOS Keychain |
+| `rp setup <alias>` | Re-run pod setup (recovery from partial failures) |
+| `rp secrets list\|set\|remove` | Manage secrets in macOS Keychain (`set` supports `--value` flag) |
 
 ### Low-Level
 

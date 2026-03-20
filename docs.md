@@ -60,14 +60,26 @@ Sync remote Claude logs to `~/.claude/remote-sessions/<pod_id>/` via rsync. Excl
 Manage secrets in macOS Keychain (service name: `rp`). Secrets are automatically injected into managed pods during `rp up` and `rp start`.
 
 ```bash
-rp secrets list                  # show managed secrets
-rp secrets set HF_TOKEN          # prompt for value, store in Keychain
-rp secrets remove HF_TOKEN       # remove from Keychain
+rp secrets list                          # show managed secrets
+rp secrets set HF_TOKEN                  # prompt for value, store in Keychain
+rp secrets set HF_TOKEN --value "hf_..." # non-interactive
+echo "hf_..." | rp secrets set HF_TOKEN  # piped input
+rp secrets remove HF_TOKEN               # remove from Keychain
 ```
 
 Injected secrets: all from Keychain manifest + `RUNPOD_API_KEY`, `RUNPOD_POD_ID`, `GH_TOKEN` (from `gh auth token`), `CLAUDE_CODE_OAUTH_TOKEN` (from Keychain), AWS credentials (from `aws configure export-credentials`).
 
 Stored in `/root/.rp-env` and `/home/user/.rp-env` on the pod, sourced via `/etc/profile.d/rp-env.sh`.
+
+#### `rp setup <alias>`
+
+Re-run pod setup on an existing pod. For managed pods, runs the full setup (tools, non-root user, secrets, auto-shutdown). For bare pods, re-runs the setup script.
+
+Useful for recovery when `rp up` creates the pod but setup fails mid-way (e.g. SSH connection timeout), or for setting up pods tracked from the RunPod web UI.
+
+```bash
+rp setup my-pod   # retry failed setup
+```
 
 ### Low-Level Commands (Bare Pods)
 
@@ -198,6 +210,8 @@ Each alias maps to a `PodMetadata` with `pod_id` and `managed` flag.
 ### SSH Config
 
 Managed blocks in `~/.ssh/config` identified by `# rp:managed alias=<alias> pod_id=<id> updated=<timestamp>`. Created on start, removed on stop/destroy, pruned by clean. Don't edit manually.
+
+Blocks include `StrictHostKeyChecking no` and `UserKnownHostsFile /dev/null` because RunPod IPs are ephemeral and reused across customers — host key verification provides no security value and would cause `Host key verification failed` errors on IP reuse.
 
 ### setup.sh
 
