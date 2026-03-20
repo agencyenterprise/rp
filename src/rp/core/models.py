@@ -157,6 +157,8 @@ class SSHConfig(BaseModel):
             lines.append("    IdentitiesOnly yes\n")
             lines.append(f"    IdentityFile {self.identity_file}\n")
         lines.append("    ForwardAgent yes\n")
+        lines.append("    StrictHostKeyChecking no\n")
+        lines.append("    UserKnownHostsFile /dev/null\n")
         return lines
 
 
