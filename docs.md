@@ -7,7 +7,7 @@ CLI wrapper around the RunPod Python API for managing GPU pods. Two tiers of pod
 Requires Python 3.13+, `uv`, and a RunPod API key.
 
 ```bash
-uv tool install https://github.com/Arrrlex/rp.git
+uv tool install https://github.com/agencyenterprise/rp.git
 rp --install-completion  # optional tab completion
 ```
 

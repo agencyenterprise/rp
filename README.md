@@ -5,7 +5,7 @@ A CLI for managing RunPod GPU pods. Two tiers: **low-level** (`rp create`) for b
 ## Install
 
 ```bash
-uv tool install https://github.com/Arrrlex/rp.git
+uv tool install https://github.com/agencyenterprise/rp.git
 rp --install-completion  # optional tab completion
 ```
 
