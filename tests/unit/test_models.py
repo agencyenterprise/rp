@@ -152,15 +152,25 @@ class TestPodCreateRequest:
         assert not request.dry_run  # default
 
     def test_minimum_storage_validation(self):
-        """Test storage size validation."""
+        """Test storage size validation: negative values are rejected."""
         gpu_spec = GPUSpec(count=1, model="A100")
 
         with pytest.raises(ValueError):
             PodCreateRequest(
                 alias="test-pod",
                 gpu_spec=gpu_spec,
-                volume_gb=5,  # below minimum
+                volume_gb=-1,  # negative not allowed
             )
+
+    def test_zero_volume_allowed(self):
+        """Test that volume_gb=0 (no volume) is allowed."""
+        gpu_spec = GPUSpec(count=1, model="A100")
+        request = PodCreateRequest(
+            alias="test-pod",
+            gpu_spec=gpu_spec,
+            volume_gb=0,
+        )
+        assert request.volume_gb == 0
 
 
 class TestPodTemplate:

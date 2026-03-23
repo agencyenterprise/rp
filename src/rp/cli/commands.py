@@ -163,6 +163,8 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
                 f"🚀 Creating pod '[bold]{alias}[/bold]': "
                 f"image=[dim]{request.image}[/dim], "
                 f"GPU={gpu_spec}, volume={volume_gb}GB, container_disk={request.container_disk_gb}GB"
+                if volume_gb > 0
+                else f"GPU={gpu_spec}, no volume, container_disk={request.container_disk_gb}GB"
             )
 
             if dry_run:
@@ -215,7 +217,12 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
             )
         else:
             console.print(
-                f"🎉 Created pod '[bold green]{final_alias}[/bold green]' with [bold yellow]{final_gpu_spec}[/bold yellow] GPU and [bold yellow]{final_volume_gb}GB[/bold yellow] storage"
+                f"🎉 Created pod '[bold green]{final_alias}[/bold green]' with [bold yellow]{final_gpu_spec}[/bold yellow] GPU"
+                + (
+                    f" and [bold yellow]{final_volume_gb}GB[/bold yellow] storage"
+                    if final_volume_gb > 0
+                    else ""
+                )
             )
 
         # Auto-clean invalid aliases and completed tasks
@@ -548,9 +555,9 @@ def show_command(alias: str | None) -> None:
 
         # Storage info
         if pod.volume_gb:
-            console.print(f"[bold]Storage:[/bold]   {pod.volume_gb}GB")
+            console.print(f"[bold]Volume:[/bold]    {pod.volume_gb}GB")
         else:
-            console.print("[bold]Storage:[/bold]   [dim](unknown)[/dim]")
+            console.print("[bold]Volume:[/bold]    [dim]none[/dim]")
 
         if pod.container_disk_gb:
             console.print(f"[bold]Container:[/bold]  {pod.container_disk_gb}GB")

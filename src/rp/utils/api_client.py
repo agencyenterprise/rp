@@ -61,7 +61,7 @@ class RunPodAPIClient:
         image_name: str,
         gpu_type_id: str,
         gpu_count: int,
-        volume_in_gb: int,
+        volume_in_gb: int = 0,
         container_disk_in_gb: int = 20,
         support_public_ip: bool = True,
         start_ssh: bool = True,
@@ -69,18 +69,22 @@ class RunPodAPIClient:
     ) -> dict[str, Any]:
         """Create a new pod with error handling."""
         try:
-            result = runpod.create_pod(
-                name=name,
-                image_name=image_name,
-                gpu_type_id=gpu_type_id,
-                gpu_count=gpu_count,
-                volume_in_gb=volume_in_gb,
-                container_disk_in_gb=container_disk_in_gb,
-                volume_mount_path="/workspace",
-                support_public_ip=support_public_ip,
-                start_ssh=start_ssh,
-                ports=ports,
-            )
+            create_kwargs: dict[str, Any] = {
+                "name": name,
+                "image_name": image_name,
+                "gpu_type_id": gpu_type_id,
+                "gpu_count": gpu_count,
+                "container_disk_in_gb": container_disk_in_gb,
+                "support_public_ip": support_public_ip,
+                "start_ssh": start_ssh,
+                "ports": ports,
+            }
+
+            if volume_in_gb > 0:
+                create_kwargs["volume_in_gb"] = volume_in_gb
+                create_kwargs["volume_mount_path"] = "/workspace"
+
+            result = runpod.create_pod(**create_kwargs)
 
             if not isinstance(result, dict) or not result.get("id"):
                 raise APIError.invalid_response(

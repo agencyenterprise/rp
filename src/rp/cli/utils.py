@@ -189,8 +189,8 @@ def parse_storage_spec(storage_string: str) -> int:
         raise typer.BadParameter("--storage numeric part is invalid") from None
 
     gb = round(value * factor)
-    if gb < 10:
-        raise typer.BadParameter("--storage must be at least 10GB")
+    if gb != 0 and gb < 10:
+        raise typer.BadParameter("--storage must be 0GB (no volume) or at least 10GB")
 
     return gb
 

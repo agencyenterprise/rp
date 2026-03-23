@@ -231,7 +231,7 @@ Edge case: `x` in model name (e.g., `rtx4090`) is fine — only treated as count
 
 ### Storage Specs
 
-`500GB`, `1TB`, `2.5TB`, `100GiB`. Converted to integer GB. Minimum 10GB.
+`500GB`, `1TB`, `2.5TB`, `100GiB`. Converted to integer GB. Minimum 10GB, or `0GB` for no volume.
 
 ### Template Auto-Numbering
 

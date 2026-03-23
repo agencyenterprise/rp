@@ -167,7 +167,9 @@ class PodCreateRequest(BaseModel):
 
     alias: str = Field(description="Alias for the pod")
     gpu_spec: GPUSpec = Field(description="GPU specification")
-    volume_gb: int = Field(ge=10, description="Storage volume size in GB")
+    volume_gb: int = Field(
+        ge=0, description="Storage volume size in GB (0 = no volume)"
+    )
     container_disk_gb: int = Field(
         default=20, ge=10, description="Container disk size in GB"
     )
