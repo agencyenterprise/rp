@@ -42,7 +42,7 @@ rp destroy h100-1 -f
 | `rp status <alias>` | Check remote Claude progress and read report |
 | `rp logs <alias>` | Sync remote Claude logs locally |
 | `rp setup <alias>` | Re-run pod setup (recovery from partial failures) |
-| `rp secrets list\|set\|remove` | Manage secrets in macOS Keychain (`set` supports `--value` flag) |
+| `rp secrets list\|set\|remove\|inject` | Manage secrets in macOS Keychain; `inject` pushes to a running pod |
 
 ### Low-Level
 

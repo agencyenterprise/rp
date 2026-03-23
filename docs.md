@@ -55,7 +55,7 @@ Check remote Claude progress. Shows whether tmux session is alive, last 30 lines
 
 Sync remote Claude logs to `~/.claude/remote-sessions/<pod_id>/` via rsync. Excludes debug/, cache/, telemetry/, etc.
 
-#### `rp secrets list|set|remove`
+#### `rp secrets list|set|remove|inject`
 
 Manage secrets in macOS Keychain (service name: `rp`). Secrets are automatically injected into managed pods during `rp up` and `rp start`.
 
@@ -65,6 +65,7 @@ rp secrets set HF_TOKEN                  # prompt for value, store in Keychain
 rp secrets set HF_TOKEN --value "hf_..." # non-interactive
 echo "hf_..." | rp secrets set HF_TOKEN  # piped input
 rp secrets remove HF_TOKEN               # remove from Keychain
+rp secrets inject my-pod                 # push secrets to a running pod
 ```
 
 Injected secrets: all from Keychain manifest + `RUNPOD_API_KEY`, `RUNPOD_POD_ID`, `GH_TOKEN` (from `gh auth token`), `CLAUDE_CODE_OAUTH_TOKEN` (from Keychain), AWS credentials (from `aws configure export-credentials`).

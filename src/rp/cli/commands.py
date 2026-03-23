@@ -890,6 +890,24 @@ def secrets_remove_command(name: str) -> None:
         handle_cli_error(e)
 
 
+def secrets_inject_command(alias: str | None) -> None:
+    """Push secrets from Keychain to a running pod."""
+    try:
+        pod_manager = get_pod_manager()
+        alias = select_pod_if_needed(alias, pod_manager)
+
+        pod_id = pod_manager.get_pod_id(alias)
+
+        from rp.core.pod_setup import PodSetup
+
+        setup = PodSetup(alias, pod_id, console)
+        setup.inject_secrets()
+        console.print(f"✅ Secrets injected into '[bold]{alias}[/bold]'.")
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
 def claude_command(
     alias: str | None,
     prompt: str | None = None,

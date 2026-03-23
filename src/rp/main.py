@@ -20,6 +20,7 @@ from rp.cli.commands import (
     list_command,
     logs_command,
     run_command,
+    secrets_inject_command,
     secrets_list_command,
     secrets_remove_command,
     secrets_set_command,
@@ -382,6 +383,14 @@ def secrets_remove(
 ):
     """Remove a secret from macOS Keychain."""
     secrets_remove_command(name)
+
+
+@secrets_app.command("inject")
+def secrets_inject(
+    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
+):
+    """Push secrets from Keychain to a running pod."""
+    secrets_inject_command(alias)
 
 
 def main():
