@@ -54,12 +54,15 @@ if [ -f /etc/rp_environment ]; then
     source /etc/rp_environment
 fi
 
-# All caches should be in /workspace (persists across pod restarts)
+# Ensure /workspace exists (may not be a mount point if no volume is attached)
+mkdir -p /workspace
+
+# All caches should be in /workspace
 export XDG_CACHE_HOME="/workspace/.cache"
 mkdir -p /workspace/.cache
 chmod 755 /workspace/.cache
 
-# All temporary files should be in /workspace
+# Temporary files in /workspace (more space than /tmp)
 export TMPDIR="/workspace/tmp"
 mkdir -p /workspace/tmp
 chmod 777 /workspace/tmp
