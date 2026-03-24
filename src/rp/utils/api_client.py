@@ -66,6 +66,7 @@ class RunPodAPIClient:
         support_public_ip: bool = True,
         start_ssh: bool = True,
         ports: str = "22/tcp",
+        network_volume_id: str | None = None,
     ) -> dict[str, Any]:
         """Create a new pod with error handling."""
         try:
@@ -80,7 +81,10 @@ class RunPodAPIClient:
                 "ports": ports,
             }
 
-            if volume_in_gb > 0:
+            if network_volume_id:
+                create_kwargs["network_volume_id"] = network_volume_id
+                create_kwargs["volume_mount_path"] = "/workspace"
+            elif volume_in_gb > 0:
                 create_kwargs["volume_in_gb"] = volume_in_gb
                 create_kwargs["volume_mount_path"] = "/workspace"
 

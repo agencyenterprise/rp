@@ -71,6 +71,7 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
     image: str | None = None,
     force: bool = False,
     dry_run: bool = False,
+    network_volume: str | None = None,
 ) -> None:
     """Create a new RunPod using PyTorch 2.8 image."""
     try:
@@ -125,7 +126,11 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
             ) as progress:
                 task = progress.add_task("Creating pod from template…", total=None)
                 pod = pod_manager.create_pod_from_template(
-                    template, force, dry_run, alias_override=alias
+                    template,
+                    force,
+                    dry_run,
+                    alias_override=alias,
+                    network_volume_id=network_volume,
                 )
                 progress.update(task, description="Pod created successfully")
 
@@ -157,14 +162,24 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
             if image is not None:
                 request_kwargs["image"] = image
 
+            # Add network volume if specified
+            if network_volume is not None:
+                request_kwargs["network_volume_id"] = network_volume
+
             request = PodCreateRequest(**request_kwargs)  # type: ignore[arg-type]
+
+            # Build storage description
+            if network_volume:
+                storage_desc = f"network_volume={network_volume}"
+            elif volume_gb > 0:
+                storage_desc = f"volume={volume_gb}GB"
+            else:
+                storage_desc = "no volume"
 
             console.print(
                 f"🚀 Creating pod '[bold]{alias}[/bold]': "
                 f"image=[dim]{request.image}[/dim], "
-                f"GPU={gpu_spec}, volume={volume_gb}GB, container_disk={request.container_disk_gb}GB"
-                if volume_gb > 0
-                else f"GPU={gpu_spec}, no volume, container_disk={request.container_disk_gb}GB"
+                f"GPU={gpu_spec}, {storage_desc}, container_disk={request.container_disk_gb}GB"
             )
 
             if dry_run:
@@ -238,6 +253,7 @@ def up_command(
     gpu: str | None = None,
     storage: str | None = None,
     force: bool = False,
+    network_volume: str | None = None,
 ) -> None:
     """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
     try:
@@ -262,7 +278,11 @@ def up_command(
             ) as progress:
                 task = progress.add_task("Creating pod from template…", total=None)
                 pod = pod_manager.create_pod_from_template(
-                    template, force, dry_run=False, alias_override=alias
+                    template,
+                    force,
+                    dry_run=False,
+                    alias_override=alias,
+                    network_volume_id=network_volume,
                 )
                 progress.update(task, description="Pod created successfully")
             final_alias = pod.alias
@@ -273,9 +293,15 @@ def up_command(
 
             gpu_spec = parse_gpu_spec(gpu)
             volume_gb = parse_storage_spec(storage)
-            request = PodCreateRequest(
-                alias=alias, gpu_spec=gpu_spec, volume_gb=volume_gb, force=force
-            )
+            request_kwargs = {
+                "alias": alias,
+                "gpu_spec": gpu_spec,
+                "volume_gb": volume_gb,
+                "force": force,
+            }
+            if network_volume is not None:
+                request_kwargs["network_volume_id"] = network_volume
+            request = PodCreateRequest(**request_kwargs)  # type: ignore[arg-type]
             console.print(f"🚀 Creating managed pod '[bold]{alias}[/bold]'")
             with Progress(
                 SpinnerColumn(),
@@ -622,6 +648,7 @@ def template_create_command(
     storage: str,
     container_disk: str | None = None,
     image: str | None = None,
+    network_volume: str | None = None,
     force: bool = False,
 ) -> None:
     """Create a new pod template."""
@@ -639,6 +666,9 @@ def template_create_command(
         if image is not None:
             template_kwargs["image"] = image
 
+        if network_volume is not None:
+            template_kwargs["network_volume_id"] = network_volume
+
         template = PodTemplate(**template_kwargs)
 
         pod_manager = get_pod_manager()
@@ -652,6 +682,8 @@ def template_create_command(
             console.print(f"   Container disk: {container_disk}")
         if image is not None:
             console.print(f"   Image: {image}")
+        if network_volume is not None:
+            console.print(f"   Network volume: {network_volume}")
 
     except Exception as e:
         handle_cli_error(e)
@@ -677,6 +709,7 @@ def template_list_command() -> None:
         table.add_column("GPU", style="green")
         table.add_column("Storage", style="yellow")
         table.add_column("Container Disk", style="yellow")
+        table.add_column("Network Volume", style="yellow")
         table.add_column("Image", style="blue")
         table.add_column("Source", style="dim")
 
@@ -687,6 +720,7 @@ def template_list_command() -> None:
                 if template.container_disk_spec
                 else "(default: 20GB)"
             )
+            nv_display = template.network_volume_id or "-"
             source = "default" if is_default_template(template.identifier) else "user"
             table.add_row(
                 template.identifier,
@@ -694,6 +728,7 @@ def template_list_command() -> None:
                 template.gpu_spec,
                 template.storage_spec,
                 container_disk_display,
+                nv_display,
                 image_display,
                 source,
             )

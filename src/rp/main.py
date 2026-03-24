@@ -106,6 +106,11 @@ def create(
         "--image",
         help="Docker image to use (default: runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04)",
     ),
+    network_volume: str = typer.Option(
+        None,
+        "--network-volume",
+        help="RunPod network volume ID to attach (mounted at /workspace)",
+    ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite alias if it exists"
     ),
@@ -114,7 +119,17 @@ def create(
     ),
 ):
     """Create a new RunPod instance, add alias, wait for SSH, and run setup scripts."""
-    create_command(alias, gpu, storage, container_disk, template, image, force, dry_run)
+    create_command(
+        alias,
+        gpu,
+        storage,
+        container_disk,
+        template,
+        image,
+        force,
+        dry_run,
+        network_volume,
+    )
 
 
 @app.command()
@@ -129,12 +144,17 @@ def up(
     storage: str = typer.Option(
         None, "--storage", help="Volume size like '500GB' or '1TB'"
     ),
+    network_volume: str = typer.Option(
+        None,
+        "--network-volume",
+        help="RunPod network volume ID to attach (mounted at /workspace)",
+    ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite alias if it exists"
     ),
 ):
     """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
-    up_command(template, alias, gpu, storage, force)
+    up_command(template, alias, gpu, storage, force, network_volume)
 
 
 @app.command()
@@ -257,13 +277,25 @@ def template_create(
         "--image",
         help="Docker image to use (default: runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04)",
     ),
+    network_volume: str = typer.Option(
+        None,
+        "--network-volume",
+        help="RunPod network volume ID to attach to pods created from this template",
+    ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite template if it exists"
     ),
 ):
     """Create a new pod template."""
     template_create_command(
-        identifier, alias_pattern, gpu, storage, container_disk, image, force
+        identifier,
+        alias_pattern,
+        gpu,
+        storage,
+        container_disk,
+        image,
+        network_volume,
+        force,
     )
 
 

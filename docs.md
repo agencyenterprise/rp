@@ -19,7 +19,7 @@ API key priority: `RUNPOD_API_KEY` env var → macOS Keychain → interactive pr
 
 ### Opinionated Commands (Managed Pods)
 
-#### `rp up [template] [--alias NAME] [--gpu SPEC] [--storage SIZE] [-f]`
+#### `rp up [template] [--alias NAME] [--gpu SPEC] [--storage SIZE] [--network-volume ID] [-f]`
 
 Create a pod with full opinionated setup. This is the recommended way to create pods.
 
@@ -31,6 +31,7 @@ Managed pods are marked with `managed: true` in metadata. On `rp start`, managed
 rp up h100                              # from template
 rp up --alias my-pod --gpu 2xH100 --storage 500GB  # explicit
 rp up h100 --alias custom-name          # template with alias override
+rp up h100 --network-volume vol_abc123  # attach a network volume
 ```
 
 #### `rp claude <alias> [-p PROMPT] [-d DIR]`
@@ -84,7 +85,7 @@ rp setup my-pod   # retry failed setup
 
 ### Low-Level Commands (Bare Pods)
 
-#### `rp create [template] [--alias NAME] [--gpu SPEC] [--storage SIZE] [--container-disk SIZE] [--image IMAGE] [-f] [--dry-run]`
+#### `rp create [template] [--alias NAME] [--gpu SPEC] [--storage SIZE] [--container-disk SIZE] [--image IMAGE] [--network-volume ID] [-f] [--dry-run]`
 
 Create a pod, add alias, wait for SSH, run `~/.config/rp/setup.sh`. No secret injection or auto-shutdown.
 
@@ -92,6 +93,7 @@ Create a pod, add alias, wait for SSH, run `~/.config/rp/setup.sh`. No secret in
 rp create --alias my-pod --gpu 2xA100 --storage 500GB
 rp create h100                          # from template (auto-numbered alias)
 rp create h100 --alias custom-name      # template with alias override
+rp create --alias my-pod --gpu H100 --storage 0GB --network-volume vol_abc123
 ```
 
 #### `rp start <alias>`
@@ -149,12 +151,13 @@ Open VS Code via remote SSH. Default path: `/workspace`.
 
 ### Templates
 
-#### `rp template create <id> --alias-pattern PATTERN --gpu SPEC --storage SIZE [--container-disk SIZE] [--image IMAGE] [-f]`
+#### `rp template create <id> --alias-pattern PATTERN --gpu SPEC --storage SIZE [--container-disk SIZE] [--image IMAGE] [--network-volume ID] [-f]`
 
 Create a reusable pod template. Pattern must contain `{i}` placeholder for auto-numbering. Can also include variable placeholders like `{project}` and `{person}` that are resolved from `~/.config/rp/.env` or `RP_`-prefixed environment variables.
 
 ```bash
 rp template create ml --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --storage 1TB
+rp template create ml-nv --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --storage 0GB --network-volume vol_abc123
 ```
 
 #### `rp template list` / `rp template delete <id>`
@@ -200,7 +203,8 @@ Override per-command: `RP_PROJECT=other rp up h100`
       "identifier": "ml",
       "alias_template": "{project}_{person}_{i}",
       "gpu_spec": "2xA100",
-      "storage_spec": "1TB"
+      "storage_spec": "1TB",
+      "network_volume_id": null
     }
   }
 }
@@ -233,6 +237,12 @@ Edge case: `x` in model name (e.g., `rtx4090`) is fine — only treated as count
 ### Storage Specs
 
 `500GB`, `1TB`, `2.5TB`, `100GiB`. Converted to integer GB. Minimum 10GB, or `0GB` for no volume.
+
+### Network Volumes
+
+RunPod network volumes are persistent storage that can be shared across pods and survive pod termination. Pass a network volume ID via `--network-volume` to attach one at `/workspace`. When a network volume is specified, it takes precedence over the `--storage` volume parameter (set `--storage 0GB` to avoid allocating a separate pod volume).
+
+Network volume IDs can be found in the RunPod web console under Storage. Templates can include a `network_volume_id` to automatically attach a volume to all pods created from that template.
 
 ### Template Auto-Numbering
 

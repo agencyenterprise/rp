@@ -182,6 +182,10 @@ class PodCreateRequest(BaseModel):
         description="Docker image to use",
     )
     ports: str = Field(default="22/tcp,8888/http", description="Port configuration")
+    network_volume_id: str | None = Field(
+        default=None,
+        description="RunPod network volume ID to attach (overrides volume_gb)",
+    )
 
 
 class PodTemplate(BaseModel):
@@ -201,6 +205,10 @@ class PodTemplate(BaseModel):
     )
     image: str | None = Field(
         default=None, description="Docker image to use (None uses default)"
+    )
+    network_volume_id: str | None = Field(
+        default=None,
+        description="RunPod network volume ID to attach",
     )
 
     @field_validator("alias_template")

@@ -140,6 +140,7 @@ class PodManager:
             support_public_ip=True,
             start_ssh=True,
             ports=request.ports,
+            network_volume_id=request.network_volume_id,
         )
 
         pod_id = created["id"]
@@ -282,6 +283,7 @@ class PodManager:
         force: bool = False,
         dry_run: bool = False,
         alias_override: str | None = None,
+        network_volume_id: str | None = None,
     ) -> Pod:
         """Create a pod using a template, finding the next available alias index or using provided alias."""
         from rp.config import load_template_vars
@@ -318,6 +320,11 @@ class PodManager:
         # Add image if specified in template
         if template.image is not None:
             request_kwargs["image"] = template.image
+
+        # Add network volume: CLI override takes precedence over template
+        nv_id = network_volume_id or template.network_volume_id
+        if nv_id is not None:
+            request_kwargs["network_volume_id"] = nv_id
 
         request = PodCreateRequest(**request_kwargs)  # type: ignore[arg-type]
 
