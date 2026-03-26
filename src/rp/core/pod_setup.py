@@ -109,10 +109,38 @@ class PodSetup:
 
         try:
             self._scp_to_pod(tmp_path, ENV_FILE_ROOT)
-            # Copy to user home and set up sourcing
+            # Copy to user home, ensure sourcing hooks exist, set up git
             self._ssh_run_script(f"""
 cp {ENV_FILE_ROOT} {ENV_FILE_USER} 2>/dev/null || true
 chown user:user {ENV_FILE_USER} 2>/dev/null || true
+
+# Ensure /etc/profile.d sourcing hook exists (for login shells)
+if [ ! -f /etc/profile.d/rp-env.sh ]; then
+    cat > /etc/profile.d/rp-env.sh << 'PROFILED'
+export PATH="$HOME/.local/bin:$PATH"
+[ -f "$HOME/.rp-env" ] && source "$HOME/.rp-env"
+PROFILED
+    chmod 644 /etc/profile.d/rp-env.sh
+fi
+
+# Ensure root .bashrc sources the env file
+grep -q 'rp-env' /root/.bashrc 2>/dev/null || cat >> /root/.bashrc << 'BASHRC'
+
+# rp managed environment
+[ -f /etc/profile.d/rp-env.sh ] && source /etc/profile.d/rp-env.sh
+BASHRC
+
+# Ensure user .bashrc sources the env file (if user exists)
+if id -u user >/dev/null 2>&1; then
+    grep -q 'rp-env' /home/user/.bashrc 2>/dev/null || cat >> /home/user/.bashrc << 'USERBASHRC'
+
+# rp managed environment
+export PATH="$HOME/.local/bin:$PATH"
+[ -f "$HOME/.rp-env" ] && source "$HOME/.rp-env"
+USERBASHRC
+    chown user:user /home/user/.bashrc 2>/dev/null || true
+fi
+
 # Set up git credentials if GH_TOKEN is available
 source {ENV_FILE_ROOT}
 if [ -n "${{GH_TOKEN:-}}" ]; then
@@ -337,7 +365,7 @@ pgrep -x cron >/dev/null 2>&1 || {
 # Environment sourcing
 cat > /etc/profile.d/rp-env.sh << 'PROFILED'
 export PATH="$HOME/.local/bin:$PATH"
-[ -f /root/.rp-env ] && source /root/.rp-env
+[ -f "$HOME/.rp-env" ] && source "$HOME/.rp-env"
 PROFILED
 chmod 644 /etc/profile.d/rp-env.sh
 grep -q 'rp-env' /root/.bashrc 2>/dev/null || cat >> /root/.bashrc << 'BASHRC'

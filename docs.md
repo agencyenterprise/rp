@@ -76,7 +76,7 @@ Secrets are resolved by walking from cwd to filesystem root, collecting `.rp_set
 
 Additionally injected: `RUNPOD_API_KEY`, `RUNPOD_POD_ID`, `GH_TOKEN` (from `gh auth token`), `CLAUDE_CODE_OAUTH_TOKEN` (from Keychain), AWS credentials (from `aws configure export-credentials`).
 
-Stored in `/root/.rp-env` and `/home/user/.rp-env` on the pod, sourced via `/etc/profile.d/rp-env.sh`.
+Stored in `/root/.rp-env` and `/home/user/.rp-env` on the pod. The inject command ensures sourcing hooks exist: `/etc/profile.d/rp-env.sh` (for login shells) and `.bashrc` entries (for interactive shells). This makes `rp secrets inject` self-contained — it works on any pod, not just those set up with `rp up`.
 
 #### `rp setup <alias>`
 
