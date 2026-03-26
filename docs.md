@@ -193,12 +193,11 @@ All fields are optional. Place a file in `~` for global defaults, in a repo root
 
 ### Legacy Configuration
 
-The following files in `~/.config/rp/` are still supported for backward compatibility:
+The following files in `~/.config/rp/` are still supported:
 
 | File | Purpose |
 |------|---------|
 | `pods.json` | Aliases, pod metadata (including `managed` flag), templates |
-| `secrets.json` | Legacy secret name manifest (used if no `.rp_settings.json` hierarchy found) |
 | `setup.sh` | Script run on bare pods during create/start |
 | `.env` | Legacy template variables (overridden by `.rp_settings.json`, overridden by `RP_` env vars) |
 
@@ -257,7 +256,7 @@ Network volume IDs can be found in the RunPod web console under Storage. Templat
 
 ### Template Auto-Numbering
 
-Templates support variable placeholders (e.g., `{project}`, `{person}`) resolved from `.rp_settings.json` hierarchy (or legacy `~/.config/rp/.env` / `RP_`-prefixed env vars), plus `{i}` for auto-numbering.
+Templates support variable placeholders (e.g., `{project}`, `{person}`) resolved from `.rp_settings.json` hierarchy (or `~/.config/rp/.env` / `RP_`-prefixed env vars), plus `{i}` for auto-numbering.
 
 `find_next_alias_index()` finds lowest `i ≥ 1` where the resolved template with that `i` doesn't exist in aliases. Destroying `ast_alex_1` then creating from template gives `ast_alex_1` again.
 

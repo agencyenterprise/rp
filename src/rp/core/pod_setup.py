@@ -55,8 +55,7 @@ class PodSetup:
         """Inject secrets from Keychain into the pod's environment file.
 
         Uses hierarchical .rp_settings.json resolution to determine which
-        secrets to inject. Falls back to legacy central manifest if no
-        settings files are found.
+        secrets to inject.
         """
         self.console.print("    Injecting secrets...")
 
@@ -64,7 +63,7 @@ class PodSetup:
 
         lines: list[str] = []
 
-        # Always include pod identity — try hierarchical first, then legacy
+        # Always include pod identity
         resolved = resolve_settings()
         api_key_secret = next(
             (s for s in resolved.secrets if s.name == "RUNPOD_API_KEY"), None
@@ -92,25 +91,15 @@ class PodSetup:
         for key, value in aws_creds.items():
             lines.append(f"export {key}={value}")
 
-        # Custom secrets: prefer hierarchical settings, fall back to legacy manifest
+        # Custom secrets from hierarchical settings
         injected: set[str] = {"RUNPOD_API_KEY"}  # Already handled above
-        if resolved.secrets:
-            for secret in resolved.secrets:
-                if secret.name in injected:
-                    continue
-                value = self.secret_manager.get_resolved(secret)
-                if value:
-                    lines.append(f"export {secret.name}={value}")
-                    injected.add(secret.name)
-        else:
-            # Legacy fallback: inject everything from central manifest
-            for name in self.secret_manager.list_names():
-                if name in injected:
-                    continue
-                value = self.secret_manager.get(name)
-                if value:
-                    lines.append(f"export {name}={value}")
-                    injected.add(name)
+        for secret in resolved.secrets:
+            if secret.name in injected:
+                continue
+            value = self.secret_manager.get_resolved(secret)
+            if value:
+                lines.append(f"export {secret.name}={value}")
+                injected.add(secret.name)
 
         # Write env file to pod
         env_content = "\n".join(lines) + "\n"

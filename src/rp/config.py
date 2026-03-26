@@ -14,7 +14,6 @@ CONFIG_DIR = Path.home() / ".config" / "rp"
 POD_CONFIG_FILE = CONFIG_DIR / "pods.json"
 API_KEY_FILE = CONFIG_DIR / "runpod_api_key"
 SETUP_FILE = CONFIG_DIR / "setup.sh"
-SECRETS_MANIFEST_FILE = CONFIG_DIR / "secrets.json"
 ENV_FILE = CONFIG_DIR / ".env"
 
 # The full path to your SSH config file.

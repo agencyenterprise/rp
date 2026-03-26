@@ -31,23 +31,14 @@ def warn_secret_mismatches() -> None:
     from rp.core.secret_manager import SecretManager
 
     sm = SecretManager()
-    missing, orphaned = sm.check_mismatches()
+    missing = sm.check_mismatches()
 
     if missing:
         names = ", ".join(s.name for s in missing)
         console.print(
             f"\n[yellow]⚠ Missing from keychain: {names}[/yellow]\n"
             f"  These are listed in .rp_settings.json but have no value stored.\n"
-            f"  Fix: ask the user to run [bold]rp secrets set <name>[/bold] for each one."
-        )
-
-    if orphaned:
-        names = ", ".join(orphaned)
-        console.print(
-            f"\n[yellow]⚠ Orphaned legacy secrets: {names}[/yellow]\n"
-            f"  These are in ~/.config/rp/secrets.json but not in any .rp_settings.json.\n"
-            f"  They won't be injected into pods. To migrate, add them to a\n"
-            f"  .rp_settings.json secrets list, then re-run [bold]rp secrets set <name>[/bold]."
+            f"  Fix: run [bold]rp secrets set <name>[/bold] for each one."
         )
 
 
@@ -876,44 +867,10 @@ def secrets_list_command(as_json: bool = False) -> None:
         sm = SecretManager()
         resolved = resolve_settings()
 
-        # Fall back to legacy manifest if no .rp_settings.json hierarchy found
         if not resolved.secrets:
-            legacy_names = sm.list_names()
-            if not legacy_names:
-                console.print(
-                    "[yellow]No secrets stored. Use 'rp secrets set <name>' to add one.[/yellow]"
-                )
-                return
-
-            if as_json:
-                import json
-
-                data = [
-                    {
-                        "name": name,
-                        "source": "~/.config/rp/secrets.json (legacy)",
-                        "set": sm.exists(name),
-                    }
-                    for name in legacy_names
-                ]
-                console.print(json.dumps(data, indent=2))
-                return
-
-            from rich.table import Table
-
-            table = Table(show_header=True, header_style="bold cyan")
-            table.add_column("Name", style="green")
-            table.add_column("Source", style="dim")
-            table.add_column("Set", style="white")
-
-            for name in legacy_names:
-                has_value = "yes" if sm.exists(name) else "missing from keychain"
-                table.add_row(name, "legacy manifest", has_value)
-
-            console.print(table)
             console.print(
-                "\n[dim]These secrets are from the legacy central manifest. "
-                "Use 'rp secrets set <name>' in a project directory to migrate.[/dim]"
+                "[yellow]No secrets configured. Add secrets to a .rp_settings.json file,\n"
+                "then use 'rp secrets set <name>' to store values.[/yellow]"
             )
             return
 
@@ -1064,11 +1021,7 @@ def secrets_remove_command(name: str, is_global: bool = False) -> None:
                     console.print(f"ℹ️  '{name}' not found in Keychain.")
                 return
 
-        # Fall back to legacy removal
-        if sm.remove(name):
-            console.print(f"✅ Removed '{name}' from Keychain (legacy).")
-        else:
-            console.print(f"ℹ️  '{name}' not found.")
+        console.print(f"ℹ️  '{name}' not found in any .rp_settings.json.")
 
     except Exception as e:
         handle_cli_error(e)

@@ -98,7 +98,6 @@ The codebase follows a layered architecture with clear separation of concerns:
 
 **`~/.config/rp/`** (central):
 - `pods.json`: Pod metadata (including `managed` flag), templates
-- `secrets.json`: Legacy secret manifest (fallback if no `.rp_settings.json` found)
 - `setup.sh`: Script run on non-managed pods during startup (optional, default provided)
 
 ### Key Design Patterns
