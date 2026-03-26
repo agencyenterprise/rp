@@ -58,18 +58,23 @@ Sync remote Claude logs to `~/.claude/remote-sessions/<pod_id>/` via rsync. Excl
 
 #### `rp secrets list|set|remove|inject`
 
-Manage secrets in macOS Keychain (service name: `rp`). Secrets are automatically injected into managed pods during `rp up` and `rp start`.
+Manage secrets in macOS Keychain (service name: `rp`). Secrets are scoped to directories via `.rp_settings.json` files and automatically injected into managed pods during `rp up` and `rp start`.
 
 ```bash
-rp secrets list                          # show managed secrets
-rp secrets set HF_TOKEN                  # prompt for value, store in Keychain
+rp secrets list                          # show secrets resolved from .rp_settings.json hierarchy
+rp secrets list --json                   # JSON output (for machine consumption)
+rp secrets set HF_TOKEN                  # prompt for value, store scoped to nearest .rp_settings.json
+rp secrets set HF_TOKEN --global         # store scoped to ~/.rp_settings.json
 rp secrets set HF_TOKEN --value "hf_..." # non-interactive
 echo "hf_..." | rp secrets set HF_TOKEN  # piped input
-rp secrets remove HF_TOKEN               # remove from Keychain
+rp secrets remove HF_TOKEN               # remove from Keychain + settings file
+rp secrets remove HF_TOKEN --global      # remove from global scope
 rp secrets inject my-pod                 # push secrets to a running pod
 ```
 
-Injected secrets: all from Keychain manifest + `RUNPOD_API_KEY`, `RUNPOD_POD_ID`, `GH_TOKEN` (from `gh auth token`), `CLAUDE_CODE_OAUTH_TOKEN` (from Keychain), AWS credentials (from `aws configure export-credentials`).
+Secrets are resolved by walking from cwd to filesystem root, collecting `.rp_settings.json` files. Closer files win for same-named secrets (allowing project-level overrides of global tokens). Keychain keys are encoded as `<dir_path>:<SECRET_NAME>` to allow different values at different scopes.
+
+Additionally injected: `RUNPOD_API_KEY`, `RUNPOD_POD_ID`, `GH_TOKEN` (from `gh auth token`), `CLAUDE_CODE_OAUTH_TOKEN` (from Keychain), AWS credentials (from `aws configure export-credentials`).
 
 Stored in `/root/.rp-env` and `/home/user/.rp-env` on the pod, sourced via `/etc/profile.d/rp-env.sh`.
 
@@ -168,28 +173,34 @@ List or delete templates. Built-in defaults: `h100`, `2h100`, `5090`, `a40` (all
 
 ## Configuration
 
-All config in `~/.config/rp/`:
+### .rp_settings.json (Hierarchical Settings)
+
+Settings are defined in `.rp_settings.json` files at any directory level. Resolution walks from cwd to filesystem root; closer files win for scalar values and same-named secrets.
+
+```json
+{
+  "person": "alex",
+  "project": "ast",
+  "secrets": ["HF_TOKEN", "WANDB_API_KEY"]
+}
+```
+
+All fields are optional. Place a file in `~` for global defaults, in a repo root for project-specific overrides.
+
+**Template variables**: `person` and `project` feed into alias templates (e.g., `{project}_{person}_{i}` → `ast_alex_1`). `RP_`-prefixed environment variables still override settings values.
+
+**Secrets**: The `secrets` list names env vars whose values are stored in macOS Keychain. A project-level `.rp_settings.json` can override a global secret (e.g., a project-specific `HF_TOKEN`).
+
+### Legacy Configuration
+
+The following files in `~/.config/rp/` are still supported for backward compatibility:
 
 | File | Purpose |
 |------|---------|
 | `pods.json` | Aliases, pod metadata (including `managed` flag), templates |
-| `secrets.json` | Manifest of secret names stored in Keychain |
+| `secrets.json` | Legacy secret name manifest (used if no `.rp_settings.json` hierarchy found) |
 | `setup.sh` | Script run on bare pods during create/start |
-| `.env` | Template variables for pod naming (e.g., `PROJECT`, `PERSON`) |
-
-### .env (Template Variables)
-
-Define variables used in alias templates. Keys are case-insensitive (mapped to lowercase for `{placeholder}` matching). `RP_`-prefixed environment variables override `.env` values.
-
-```bash
-# ~/.config/rp/.env
-PROJECT=ast
-PERSON=alex
-```
-
-With these set, a template using `{project}_{person}_{i}` produces aliases like `ast_alex_1`, `ast_alex_2`, etc.
-
-Override per-command: `RP_PROJECT=other rp up h100`
+| `.env` | Legacy template variables (overridden by `.rp_settings.json`, overridden by `RP_` env vars) |
 
 ### pods.json
 
@@ -246,7 +257,7 @@ Network volume IDs can be found in the RunPod web console under Storage. Templat
 
 ### Template Auto-Numbering
 
-Templates support variable placeholders (e.g., `{project}`, `{person}`) resolved from `~/.config/rp/.env` or `RP_`-prefixed env vars, plus `{i}` for auto-numbering.
+Templates support variable placeholders (e.g., `{project}`, `{person}`) resolved from `.rp_settings.json` hierarchy (or legacy `~/.config/rp/.env` / `RP_`-prefixed env vars), plus `{i}` for auto-numbering.
 
 `find_next_alias_index()` finds lowest `i ≥ 1` where the resolved template with that `i` doesn't exist in aliases. Destroying `ast_alex_1` then creating from template gives `ast_alex_1` again.
 

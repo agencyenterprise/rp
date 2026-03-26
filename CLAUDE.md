@@ -78,7 +78,8 @@ The codebase follows a layered architecture with clear separation of concerns:
 2. **Service Layer** (`src/rp/core/`)
    - `pod_manager.py`: Pod CRUD operations, template management
    - `pod_setup.py`: Opinionated pod setup (tools, secrets, auto-shutdown, non-root user)
-   - `secret_manager.py`: macOS Keychain secret management
+   - `secret_manager.py`: macOS Keychain secret management (path-scoped keys)
+   - `settings.py`: Hierarchical `.rp_settings.json` resolution (walks cwd→root)
    - `claude_remote.py`: Remote Claude session management (tmux, OAuth, logs)
    - `ssh_manager.py`: SSH config file manipulation (marker-based block management)
 
@@ -93,9 +94,11 @@ The codebase follows a layered architecture with clear separation of concerns:
 
 ### Configuration Storage
 
-All configuration stored in `~/.config/rp/`:
+**`.rp_settings.json`** (hierarchical): Settings files at any directory level define `person`, `project`, and `secrets`. Resolution walks cwd→root; closest wins. Keychain keys encode `<dir_path>:<SECRET_NAME>` for scoping.
+
+**`~/.config/rp/`** (central):
 - `pods.json`: Pod metadata (including `managed` flag), templates
-- `secrets.json`: Manifest of secret names stored in Keychain
+- `secrets.json`: Legacy secret manifest (fallback if no `.rp_settings.json` found)
 - `setup.sh`: Script run on non-managed pods during startup (optional, default provided)
 
 ### Key Design Patterns

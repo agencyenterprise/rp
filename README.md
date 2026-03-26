@@ -66,8 +66,8 @@ rp destroy h100-1 -f
 Built-in: `h100`, `2h100`, `5090`, `a40` (all 500GB container disk, no volume, using `{project}_{person}_{i}` naming).
 
 ```bash
-# Set naming variables in ~/.config/rp/.env
-echo "PROJECT=ast\nPERSON=alex" > ~/.config/rp/.env
+# Set naming variables in .rp_settings.json (or ~/.rp_settings.json for global)
+echo '{"project": "ast", "person": "alex"}' > .rp_settings.json
 
 rp create h100      # creates ast_alex_1, ast_alex_2, etc.
 
@@ -82,9 +82,12 @@ rp template delete ml
 
 ## Configuration
 
-All config in `~/.config/rp/`. See [docs.md](docs.md) for details.
+Settings are defined in `.rp_settings.json` files at any directory level (walks cwd → root, closest wins). See [docs.md](docs.md) for details.
 
+```json
+{"person": "alex", "project": "ast", "secrets": ["HF_TOKEN", "WANDB_API_KEY"]}
+```
+
+Additional config in `~/.config/rp/`:
 - `pods.json` — aliases, metadata, templates
-- `.env` — template variables for pod naming (`PROJECT`, `PERSON`, etc.)
-- `secrets.json` — Keychain secret manifest
 - `setup.sh` — script for bare pods (customizable)
