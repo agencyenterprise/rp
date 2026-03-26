@@ -25,6 +25,32 @@ from rp.core.pod_manager import PodManager
 from rp.core.ssh_manager import SSHManager
 from rp.utils.errors import AliasError, APIError, PodError
 
+
+def warn_secret_mismatches() -> None:
+    """Check for and warn about mismatches between settings files and keychain."""
+    from rp.core.secret_manager import SecretManager
+
+    sm = SecretManager()
+    missing, orphaned = sm.check_mismatches()
+
+    if missing:
+        names = ", ".join(s.name for s in missing)
+        console.print(
+            f"\n[yellow]⚠ Missing from keychain: {names}[/yellow]\n"
+            f"  These are listed in .rp_settings.json but have no value stored.\n"
+            f"  Fix: ask the user to run [bold]rp secrets set <name>[/bold] for each one."
+        )
+
+    if orphaned:
+        names = ", ".join(orphaned)
+        console.print(
+            f"\n[yellow]⚠ Orphaned legacy secrets: {names}[/yellow]\n"
+            f"  These are in ~/.config/rp/secrets.json but not in any .rp_settings.json.\n"
+            f"  They won't be injected into pods. To migrate, add them to a\n"
+            f"  .rp_settings.json secrets list, then re-run [bold]rp secrets set <name>[/bold]."
+        )
+
+
 # Initialize services (will be properly injected in production)
 _pod_manager: PodManager | None = None
 _ssh_manager: SSHManager | None = None
@@ -331,6 +357,7 @@ def up_command(
             from rp.core.pod_setup import PodSetup
 
             console.print("⚙️  Running managed setup…")
+            warn_secret_mismatches()
             setup = PodSetup(final_alias, pod.id, console)
             setup.run_full_setup()
 
@@ -396,6 +423,7 @@ def start_command(alias: str | None) -> None:
             from rp.core.pod_setup import PodSetup
 
             console.print("⚙️  Re-running managed setup…")
+            warn_secret_mismatches()
             setup = PodSetup(alias, pod.id, console)
             setup.run_managed_restart_setup()
         else:
@@ -826,6 +854,7 @@ def setup_command(alias: str | None) -> None:
             from rp.core.pod_setup import PodSetup
 
             console.print(f"⚙️  Running managed setup on '[bold]{alias}[/bold]'…")
+            warn_secret_mismatches()
             setup = PodSetup(alias, pod_id, console)
             setup.run_full_setup()
         else:
@@ -939,6 +968,8 @@ def secrets_list_command(as_json: bool = False) -> None:
             if resolved.person:
                 parts.append(f"person=[bold]{resolved.person}[/bold]")
             console.print(f"\n  Settings: {', '.join(parts)}")
+
+        warn_secret_mismatches()
 
     except Exception as e:
         handle_cli_error(e)
@@ -1054,6 +1085,7 @@ def secrets_inject_command(alias: str | None) -> None:
         from rp.core.pod_setup import PodSetup
 
         setup = PodSetup(alias, pod_id, console)
+        warn_secret_mismatches()
         setup.inject_secrets()
         console.print(f"✅ Secrets injected into '[bold]{alias}[/bold]'.")
 

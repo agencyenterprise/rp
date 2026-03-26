@@ -88,6 +88,27 @@ class SecretManager:
         """Check if a secret exists in Keychain."""
         return self.get(name, source_dir) is not None
 
+    def check_mismatches(
+        self, start: Path | None = None
+    ) -> tuple[list[ResolvedSecret], list[str]]:
+        """Check for mismatches between settings files and keychain.
+
+        Returns:
+            missing_from_keychain: secrets listed in settings but not in keychain
+            orphaned_legacy: secret names in legacy manifest but not in any settings file
+        """
+        resolved = resolve_settings(start)
+        resolved_names = {s.name for s in resolved.secrets}
+
+        missing_from_keychain = [
+            s for s in resolved.secrets if self.get_resolved(s) is None
+        ]
+
+        legacy_names = self._load_manifest()
+        orphaned_legacy = sorted(legacy_names - resolved_names)
+
+        return missing_from_keychain, orphaned_legacy
+
     # --- Keychain operations ---
 
     def _keychain_get(self, account: str) -> str | None:
