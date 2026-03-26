@@ -74,7 +74,7 @@ rp secrets inject my-pod                 # push secrets to a running pod
 
 Secrets are resolved by walking from cwd to filesystem root, collecting `.rp_settings.json` files. Closer files win for same-named secrets (allowing project-level overrides of global tokens). Keychain keys are encoded as `<dir_path>:<SECRET_NAME>` to allow different values at different scopes.
 
-Additionally injected: `RUNPOD_API_KEY`, `RUNPOD_POD_ID`, `GH_TOKEN` (from `gh auth token`), `CLAUDE_CODE_OAUTH_TOKEN` (from Keychain), AWS credentials (from `aws configure export-credentials`).
+Additionally injected: `RUNPOD_API_KEY`, `RUNPOD_POD_ID`, `GH_TOKEN` (from `gh auth token`), `CLAUDE_CODE_OAUTH_TOKEN` (from Keychain), AWS credentials (from `aws configure export-credentials`). When `GH_TOKEN` is available, HTTPS git credentials are configured in `~/.git-credentials` for both root and user, enabling `git clone/push/pull` via HTTPS URLs. Pods do not have GitHub SSH keys — always use HTTPS URLs for git operations.
 
 Stored in `/root/.rp-env` and `/home/user/.rp-env` on the pod (with `~/.env` symlinks for python-dotenv compatibility). The inject command ensures sourcing hooks exist: `/etc/profile.d/rp-env.sh` (login shells), `/etc/bash.bashrc` (all interactive shells), and per-user `.bashrc` entries. This makes `rp secrets inject` self-contained — it works on any pod, not just those set up with `rp up`.
 
