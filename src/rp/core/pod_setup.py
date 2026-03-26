@@ -123,6 +123,13 @@ PROFILED
     chmod 644 /etc/profile.d/rp-env.sh
 fi
 
+# Ensure /etc/bash.bashrc sources the env file (for all interactive shells)
+grep -q 'rp-env' /etc/bash.bashrc 2>/dev/null || cat >> /etc/bash.bashrc << 'SYSBASHRC'
+
+# rp managed environment
+[ -f "$HOME/.rp-env" ] && source "$HOME/.rp-env"
+SYSBASHRC
+
 # Ensure root .bashrc sources the env file
 grep -q 'rp-env' /root/.bashrc 2>/dev/null || cat >> /root/.bashrc << 'BASHRC'
 
@@ -139,6 +146,13 @@ export PATH="$HOME/.local/bin:$PATH"
 [ -f "$HOME/.rp-env" ] && source "$HOME/.rp-env"
 USERBASHRC
     chown user:user /home/user/.bashrc 2>/dev/null || true
+fi
+
+# Create .env symlinks for python-dotenv compatibility
+ln -sf {ENV_FILE_ROOT} /root/.env
+if id -u user >/dev/null 2>&1; then
+    ln -sf {ENV_FILE_USER} /home/user/.env
+    chown -h user:user /home/user/.env 2>/dev/null || true
 fi
 
 # Set up git credentials if GH_TOKEN is available
@@ -368,6 +382,11 @@ export PATH="$HOME/.local/bin:$PATH"
 [ -f "$HOME/.rp-env" ] && source "$HOME/.rp-env"
 PROFILED
 chmod 644 /etc/profile.d/rp-env.sh
+grep -q 'rp-env' /etc/bash.bashrc 2>/dev/null || cat >> /etc/bash.bashrc << 'SYSBASHRC'
+
+# rp managed environment
+[ -f "$HOME/.rp-env" ] && source "$HOME/.rp-env"
+SYSBASHRC
 grep -q 'rp-env' /root/.bashrc 2>/dev/null || cat >> /root/.bashrc << 'BASHRC'
 
 # rp managed environment

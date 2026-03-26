@@ -1040,7 +1040,12 @@ def secrets_inject_command(alias: str | None) -> None:
         setup = PodSetup(alias, pod_id, console)
         warn_secret_mismatches()
         setup.inject_secrets()
-        console.print(f"✅ Secrets injected into '[bold]{alias}[/bold]'.")
+        console.print(
+            f"✅ Secrets injected into '[bold]{alias}[/bold]'.\n"
+            f"   Written to /root/.rp-env and /home/user/.rp-env\n"
+            f"   Available in login/interactive shells and via [bold]rp run[/bold].\n"
+            f"   For scripts: [dim]source ~/.rp-env[/dim]"
+        )
 
     except Exception as e:
         handle_cli_error(e)
