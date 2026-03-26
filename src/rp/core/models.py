@@ -236,8 +236,8 @@ class PodTemplate(BaseModel):
         if missing:
             raise ValueError(
                 f"Template '{self.identifier}' requires variables {missing} "
-                f"but they are not set. Define them in ~/.config/rp/.env or "
-                f"as RP_-prefixed environment variables "
+                f"but they are not set. Define them in .rp_settings.json "
+                f"or as RP_-prefixed environment variables "
                 f"(e.g. RP_{missing[0].upper()}=value)."
             )
         # Substitute all vars except {i}

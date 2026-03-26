@@ -31,15 +31,22 @@ def ensure_config_dir_exists() -> None:
 
 
 def load_template_vars() -> dict[str, str]:
-    """Load template variables from ~/.config/rp/.env and environment variables.
+    """Load template variables from .rp_settings.json hierarchy, .env, and env vars.
 
-    Variables in .env are defined as KEY=VALUE lines (no RP_ prefix needed in the file).
-    Environment variables override .env values and must be prefixed with RP_
-    (e.g. RP_PROJECT -> {project}).
+    Resolution order (later overrides earlier):
+    1. .rp_settings.json hierarchy (person, project from nearest settings file)
+    2. ~/.config/rp/.env file (legacy, KEY=VALUE lines)
+    3. RP_-prefixed environment variables (e.g. RP_PROJECT -> {project})
     """
     vars: dict[str, str] = {}
 
-    # Load from .env file first
+    # 1. Load from .rp_settings.json hierarchy
+    from rp.core.settings import resolve_settings
+
+    resolved = resolve_settings()
+    vars.update(resolved.template_vars())
+
+    # 2. Legacy .env file (overrides settings)
     if ENV_FILE.exists():
         for raw_line in ENV_FILE.read_text().splitlines():
             stripped = raw_line.strip()
@@ -52,7 +59,7 @@ def load_template_vars() -> dict[str, str]:
             value = value.strip().strip("\"'")
             vars[key.lower()] = value
 
-    # Override with RP_-prefixed env vars
+    # 3. Override with RP_-prefixed env vars (highest priority)
     for key, value in os.environ.items():
         if key.startswith("RP_") and key != "RP_":
             var_name = key[3:].lower()  # RP_PROJECT -> project

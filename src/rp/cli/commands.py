@@ -5,6 +5,8 @@ This module implements all the CLI commands using the refactored service layer,
 providing clean separation between CLI interface and business logic.
 """
 
+from pathlib import Path
+
 import typer
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
@@ -145,28 +147,20 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
             gpu_spec = parse_gpu_spec(gpu)
             volume_gb = parse_storage_spec(storage)
 
-            request_kwargs = {
-                "alias": alias,
-                "gpu_spec": gpu_spec,
-                "volume_gb": volume_gb,
-                "force": force,
-                "dry_run": dry_run,
-            }
+            container_disk_gb = (
+                parse_storage_spec(container_disk) if container_disk is not None else 20
+            )
 
-            # Add container disk if specified, otherwise use default (20GB)
-            if container_disk is not None:
-                container_disk_gb = parse_storage_spec(container_disk)
-                request_kwargs["container_disk_gb"] = container_disk_gb
-
-            # Add image if specified
-            if image is not None:
-                request_kwargs["image"] = image
-
-            # Add network volume if specified
-            if network_volume is not None:
-                request_kwargs["network_volume_id"] = network_volume
-
-            request = PodCreateRequest(**request_kwargs)  # type: ignore[arg-type]
+            request = PodCreateRequest(
+                alias=alias,
+                gpu_spec=gpu_spec,
+                volume_gb=volume_gb,
+                force=force,
+                dry_run=dry_run,
+                container_disk_gb=container_disk_gb,
+                image=image or PodCreateRequest.model_fields["image"].default,
+                network_volume_id=network_volume,
+            )
 
             # Build storage description
             if network_volume:
@@ -293,15 +287,13 @@ def up_command(
 
             gpu_spec = parse_gpu_spec(gpu)
             volume_gb = parse_storage_spec(storage)
-            request_kwargs = {
-                "alias": alias,
-                "gpu_spec": gpu_spec,
-                "volume_gb": volume_gb,
-                "force": force,
-            }
-            if network_volume is not None:
-                request_kwargs["network_volume_id"] = network_volume
-            request = PodCreateRequest(**request_kwargs)  # type: ignore[arg-type]
+            request = PodCreateRequest(
+                alias=alias,
+                gpu_spec=gpu_spec,
+                volume_gb=volume_gb,
+                force=force,
+                network_volume_id=network_volume,
+            )
             console.print(f"🚀 Creating managed pod '[bold]{alias}[/bold]'")
             with Progress(
                 SpinnerColumn(),
@@ -846,42 +838,125 @@ def setup_command(alias: str | None) -> None:
         handle_cli_error(e)
 
 
-def secrets_list_command() -> None:
-    """List managed secrets."""
+def secrets_list_command(as_json: bool = False) -> None:
+    """List secrets resolved from .rp_settings.json hierarchy."""
     try:
         from rp.core.secret_manager import SecretManager
+        from rp.core.settings import resolve_settings
 
         sm = SecretManager()
-        names = sm.list_names()
+        resolved = resolve_settings()
 
-        if not names:
+        # Fall back to legacy manifest if no .rp_settings.json hierarchy found
+        if not resolved.secrets:
+            legacy_names = sm.list_names()
+            if not legacy_names:
+                console.print(
+                    "[yellow]No secrets stored. Use 'rp secrets set <name>' to add one.[/yellow]"
+                )
+                return
+
+            if as_json:
+                import json
+
+                data = [
+                    {
+                        "name": name,
+                        "source": "~/.config/rp/secrets.json (legacy)",
+                        "set": sm.exists(name),
+                    }
+                    for name in legacy_names
+                ]
+                console.print(json.dumps(data, indent=2))
+                return
+
+            from rich.table import Table
+
+            table = Table(show_header=True, header_style="bold cyan")
+            table.add_column("Name", style="green")
+            table.add_column("Source", style="dim")
+            table.add_column("Set", style="white")
+
+            for name in legacy_names:
+                has_value = "yes" if sm.exists(name) else "missing from keychain"
+                table.add_row(name, "legacy manifest", has_value)
+
+            console.print(table)
             console.print(
-                "[yellow]No secrets stored. Use 'rp secrets set <name>' to add one.[/yellow]"
+                "\n[dim]These secrets are from the legacy central manifest. "
+                "Use 'rp secrets set <name>' in a project directory to migrate.[/dim]"
             )
+            return
+
+        if as_json:
+            import json
+
+            data = [
+                {
+                    "name": s.name,
+                    "source": str(s.source_dir),
+                    "set": sm.get_resolved(s) is not None,
+                }
+                for s in resolved.secrets
+            ]
+            if resolved.person:
+                console.print(
+                    json.dumps(
+                        {
+                            "person": resolved.person,
+                            "project": resolved.project,
+                            "secrets": data,
+                        },
+                        indent=2,
+                    )
+                )
+            else:
+                console.print(json.dumps({"secrets": data}, indent=2))
             return
 
         from rich.table import Table
 
         table = Table(show_header=True, header_style="bold cyan")
         table.add_column("Name", style="green")
+        table.add_column("Source", style="dim")
         table.add_column("Set", style="white")
 
-        for name in names:
-            has_value = "yes" if sm.exists(name) else "missing from keychain"
-            table.add_row(name, has_value)
+        for secret in resolved.secrets:
+            source = str(secret.source_dir).replace(str(Path.home()), "~")
+            has_value = (
+                "yes"
+                if sm.get_resolved(secret) is not None
+                else "missing from keychain"
+            )
+            table.add_row(secret.name, source, has_value)
 
         console.print(table)
+
+        if resolved.person or resolved.project:
+            parts = []
+            if resolved.project:
+                parts.append(f"project=[bold]{resolved.project}[/bold]")
+            if resolved.person:
+                parts.append(f"person=[bold]{resolved.person}[/bold]")
+            console.print(f"\n  Settings: {', '.join(parts)}")
 
     except Exception as e:
         handle_cli_error(e)
 
 
-def secrets_set_command(name: str, value: str | None = None) -> None:
-    """Store a secret in macOS Keychain."""
+def secrets_set_command(
+    name: str, value: str | None = None, is_global: bool = False
+) -> None:
+    """Store a secret in macOS Keychain, scoped to a .rp_settings.json file.
+
+    By default, writes to the nearest .rp_settings.json walking up from cwd.
+    If none exists, creates one in cwd. Use --global to write to ~/.rp_settings.json.
+    """
     try:
         import sys
 
         from rp.core.secret_manager import SecretManager
+        from rp.core.settings import find_nearest_settings_file
 
         if value is not None:
             # Value provided via --value flag
@@ -899,9 +974,16 @@ def secrets_set_command(name: str, value: str | None = None) -> None:
             console.print("❌ Empty value provided.", style="red")
             raise typer.Exit(1)
 
+        if is_global:
+            target_dir = Path.home()
+        else:
+            nearest = find_nearest_settings_file()
+            target_dir = nearest.parent if nearest is not None else Path.cwd()
+
         sm = SecretManager()
-        sm.set(name, secret_value)
-        console.print(f"✅ Stored '{name}' in macOS Keychain.")
+        sm.set(name, secret_value, source_dir=target_dir)
+        display_dir = str(target_dir).replace(str(Path.home()), "~")
+        console.print(f"✅ Stored '{name}' in Keychain (scope: {display_dir}).")
 
     except (EOFError, KeyboardInterrupt):
         console.print("\n❌ Cancelled.", style="red")
@@ -910,16 +992,40 @@ def secrets_set_command(name: str, value: str | None = None) -> None:
         handle_cli_error(e)
 
 
-def secrets_remove_command(name: str) -> None:
-    """Remove a secret from macOS Keychain."""
+def secrets_remove_command(name: str, is_global: bool = False) -> None:
+    """Remove a secret from Keychain and its .rp_settings.json entry."""
     try:
         from rp.core.secret_manager import SecretManager
+        from rp.core.settings import resolve_settings
 
         sm = SecretManager()
+
+        if is_global:
+            target_dir = Path.home()
+            if sm.remove(name, source_dir=target_dir):
+                console.print(f"✅ Removed '{name}' from Keychain (scope: ~).")
+            else:
+                console.print(f"ℹ️  '{name}' not found in Keychain at global scope.")
+            return
+
+        # Find which level defines this secret
+        resolved = resolve_settings()
+        for secret in resolved.secrets:
+            if secret.name == name:
+                if sm.remove(name, source_dir=secret.source_dir):
+                    display_dir = str(secret.source_dir).replace(str(Path.home()), "~")
+                    console.print(
+                        f"✅ Removed '{name}' from Keychain (scope: {display_dir})."
+                    )
+                else:
+                    console.print(f"ℹ️  '{name}' not found in Keychain.")
+                return
+
+        # Fall back to legacy removal
         if sm.remove(name):
-            console.print(f"✅ Removed '{name}' from macOS Keychain.")
+            console.print(f"✅ Removed '{name}' from Keychain (legacy).")
         else:
-            console.print(f"ℹ️  '{name}' not found in Keychain.")
+            console.print(f"ℹ️  '{name}' not found.")
 
     except Exception as e:
         handle_cli_error(e)

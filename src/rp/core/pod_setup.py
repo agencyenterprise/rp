@@ -52,13 +52,27 @@ class PodSetup:
         self._ssh_run_script(_CREATE_USER_SCRIPT)
 
     def inject_secrets(self) -> None:
-        """Inject secrets from Keychain into the pod's environment file."""
+        """Inject secrets from Keychain into the pod's environment file.
+
+        Uses hierarchical .rp_settings.json resolution to determine which
+        secrets to inject. Falls back to legacy central manifest if no
+        settings files are found.
+        """
         self.console.print("    Injecting secrets...")
+
+        from rp.core.settings import resolve_settings
 
         lines: list[str] = []
 
-        # Always include pod identity
-        api_key = self.secret_manager.get("RUNPOD_API_KEY")
+        # Always include pod identity — try hierarchical first, then legacy
+        resolved = resolve_settings()
+        api_key_secret = next(
+            (s for s in resolved.secrets if s.name == "RUNPOD_API_KEY"), None
+        )
+        if api_key_secret:
+            api_key = self.secret_manager.get_resolved(api_key_secret)
+        else:
+            api_key = self.secret_manager.get("RUNPOD_API_KEY")
         if api_key:
             lines.append(f"export RUNPOD_API_KEY={api_key}")
         lines.append(f"export RUNPOD_POD_ID={self.pod_id}")
@@ -78,13 +92,25 @@ class PodSetup:
         for key, value in aws_creds.items():
             lines.append(f"export {key}={value}")
 
-        # Custom secrets from Keychain manifest
-        for name in self.secret_manager.list_names():
-            if name == "RUNPOD_API_KEY":
-                continue  # Already handled
-            value = self.secret_manager.get(name)
-            if value:
-                lines.append(f"export {name}={value}")
+        # Custom secrets: prefer hierarchical settings, fall back to legacy manifest
+        injected: set[str] = {"RUNPOD_API_KEY"}  # Already handled above
+        if resolved.secrets:
+            for secret in resolved.secrets:
+                if secret.name in injected:
+                    continue
+                value = self.secret_manager.get_resolved(secret)
+                if value:
+                    lines.append(f"export {secret.name}={value}")
+                    injected.add(secret.name)
+        else:
+            # Legacy fallback: inject everything from central manifest
+            for name in self.secret_manager.list_names():
+                if name in injected:
+                    continue
+                value = self.secret_manager.get(name)
+                if value:
+                    lines.append(f"export {name}={value}")
+                    injected.add(name)
 
         # Write env file to pod
         env_content = "\n".join(lines) + "\n"

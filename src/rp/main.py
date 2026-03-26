@@ -393,9 +393,13 @@ def logs(
 
 
 @secrets_app.command("list")
-def secrets_list():
-    """List managed secrets."""
-    secrets_list_command()
+def secrets_list(
+    json: bool = typer.Option(
+        False, "--json", help="Output as JSON (for machine consumption)"
+    ),
+):
+    """List secrets resolved from .rp_settings.json hierarchy."""
+    secrets_list_command(as_json=json)
 
 
 @secrets_app.command("set")
@@ -404,17 +408,25 @@ def secrets_set(
     value: str = typer.Option(
         None, "--value", help="Secret value (if omitted, reads from stdin or prompts)"
     ),
+    is_global: bool = typer.Option(
+        False,
+        "--global",
+        help="Store in ~/.rp_settings.json instead of nearest settings file",
+    ),
 ):
-    """Store a secret in macOS Keychain."""
-    secrets_set_command(name, value)
+    """Store a secret in macOS Keychain, scoped to a .rp_settings.json file."""
+    secrets_set_command(name, value, is_global)
 
 
 @secrets_app.command("remove")
 def secrets_remove(
     name: str = typer.Argument(..., help="Secret name to remove"),
+    is_global: bool = typer.Option(
+        False, "--global", help="Remove from global (~) scope"
+    ),
 ):
-    """Remove a secret from macOS Keychain."""
-    secrets_remove_command(name)
+    """Remove a secret from Keychain and its .rp_settings.json entry."""
+    secrets_remove_command(name, is_global)
 
 
 @secrets_app.command("inject")

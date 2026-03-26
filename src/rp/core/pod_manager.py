@@ -304,28 +304,23 @@ class PodManager:
         gpu_spec = parse_gpu_spec(template.gpu_spec)
         volume_gb = parse_storage_spec(template.storage_spec)
 
-        request_kwargs = {
-            "alias": alias,
-            "gpu_spec": gpu_spec,
-            "volume_gb": volume_gb,
-            "force": force,
-            "dry_run": dry_run,
-        }
-
-        # Add container disk if specified in template
-        if template.container_disk_spec is not None:
-            container_disk_gb = parse_storage_spec(template.container_disk_spec)
-            request_kwargs["container_disk_gb"] = container_disk_gb
-
-        # Add image if specified in template
-        if template.image is not None:
-            request_kwargs["image"] = template.image
-
-        # Add network volume: CLI override takes precedence over template
+        container_disk_gb = (
+            parse_storage_spec(template.container_disk_spec)
+            if template.container_disk_spec is not None
+            else 20
+        )
+        image = template.image or PodCreateRequest.model_fields["image"].default
         nv_id = network_volume_id or template.network_volume_id
-        if nv_id is not None:
-            request_kwargs["network_volume_id"] = nv_id
 
-        request = PodCreateRequest(**request_kwargs)  # type: ignore[arg-type]
+        request = PodCreateRequest(
+            alias=alias,
+            gpu_spec=gpu_spec,
+            volume_gb=volume_gb,
+            force=force,
+            dry_run=dry_run,
+            container_disk_gb=container_disk_gb,
+            image=image,
+            network_volume_id=nv_id,
+        )
 
         return self.create_pod(request)
