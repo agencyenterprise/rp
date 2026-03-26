@@ -978,7 +978,19 @@ def secrets_set_command(
             target_dir = Path.home()
         else:
             nearest = find_nearest_settings_file()
-            target_dir = nearest.parent if nearest is not None else Path.cwd()
+            if nearest is not None:
+                target_dir = nearest.parent
+            else:
+                # No settings file found — default to global with confirmation
+                home_display = "~/.rp_settings.json"
+                if not typer.confirm(
+                    f"No .rp_settings.json found. Store '{name}' globally in {home_display}?"
+                ):
+                    console.print(
+                        "Cancelled. Use --global or create a .rp_settings.json first."
+                    )
+                    raise typer.Exit(0)
+                target_dir = Path.home()
 
         sm = SecretManager()
         sm.set(name, secret_value, source_dir=target_dir)
