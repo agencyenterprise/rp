@@ -131,7 +131,7 @@ Table of all pods: alias, ID, status (running/stopped/invalid).
 
 #### `rp show <alias>`
 
-Detailed pod info: ID, status, GPU, storage, cost, IP, image.
+Detailed pod info: ID, status, GPU, storage, cost, IP, image. For managed running pods, also shows Claude session status and the last few lines of activity if Claude is running.
 
 #### `rp clean`
 

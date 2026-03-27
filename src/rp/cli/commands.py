@@ -20,7 +20,7 @@ from rp.cli.utils import (
     select_pod_if_needed,
     setup_api_client,
 )
-from rp.core.models import PodCreateRequest, PodTemplate, SSHConfig
+from rp.core.models import PodCreateRequest, PodStatus, PodTemplate, SSHConfig
 from rp.core.pod_manager import PodManager
 from rp.core.ssh_manager import SSHManager
 from rp.utils.errors import AliasError, APIError, PodError
@@ -616,6 +616,31 @@ def show_command(alias: str | None) -> None:
                 pod.image if len(pod.image) <= 50 else pod.image[:47] + "..."
             )
             console.print(f"[bold]Image:[/bold]     {image_display}")
+
+        # Show Claude activity for managed running pods
+        metadata = pod_manager.config.pod_metadata.get(alias)
+        if metadata and metadata.managed and pod.status == PodStatus.RUNNING:
+            from rp.core.claude_remote import ClaudeRemote
+
+            remote = ClaudeRemote(alias, pod.id)
+            try:
+                claude_status = remote.get_status(lines=10)
+                if claude_status["running"]:
+                    console.print(
+                        "[bold]Claude:[/bold]    [bold green]running[/bold green]"
+                    )
+                    if claude_status["output"]:
+                        console.print("\n[dim]--- Recent Claude activity ---[/dim]")
+                        # Show last few lines
+                        lines = claude_status["output"].strip().split("\n")
+                        for line in lines[-5:]:
+                            console.print(f"  {line}")
+                elif claude_status["output"]:
+                    console.print(
+                        "[bold]Claude:[/bold]    [bold yellow]finished[/bold yellow]"
+                    )
+            except Exception:
+                pass  # SSH not ready or other connection issue
 
         console.print("=" * 60 + "\n")
 
