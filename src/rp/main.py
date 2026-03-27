@@ -16,6 +16,7 @@ from rp.cli.commands import (
     code_command,
     create_command,
     destroy_command,
+    down_command,
     gpus_command,
     list_command,
     logs_command,
@@ -101,6 +102,21 @@ def up(
 ):
     """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
     up_command(template, alias, gpu, storage, force, network_volume)
+
+
+@app.command()
+def down(
+    alias: str = typer.Argument(
+        None,
+        help="Pod alias to tear down",
+        autocompletion=complete_alias,
+    ),
+    skip_logs: bool = typer.Option(
+        False, "--skip-logs", help="Skip syncing Claude logs before destroying"
+    ),
+):
+    """Sync logs and destroy a pod (counterpart to 'rp up')."""
+    down_command(alias, skip_logs)
 
 
 @app.command()

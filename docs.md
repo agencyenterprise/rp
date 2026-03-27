@@ -83,6 +83,15 @@ Stored in `/root/.rp-env` and `/home/user/.rp-env` on the pod (with `~/.env` sym
 
 **Note:** Secrets are available in login shells (`bash -l`), interactive shells (`ssh pod`), and via `rp run`. They are **not** available in non-interactive SSH commands (`ssh pod "echo $VAR"`) because bash skips all rc files for non-interactive sessions. Use `rp run <alias> -- command` instead, or `source ~/.rp-env` at the start of scripts.
 
+#### `rp down <alias> [--skip-logs]`
+
+Sync Claude logs and destroy a pod. This is the counterpart to `rp up` — it syncs remote Claude logs to `~/.claude/remote-sessions/<pod_id>/` via rsync, then terminates the pod, removes SSH config, and deletes the alias. Log sync failures are non-fatal (the pod is still destroyed).
+
+```bash
+rp down my-pod              # sync logs, then destroy
+rp down my-pod --skip-logs  # destroy immediately without syncing
+```
+
 #### `rp setup <alias>`
 
 Re-run pod setup on an existing pod. For managed pods, runs the full setup (tools, non-root user, secrets, auto-shutdown). For bare pods, re-runs the setup script.

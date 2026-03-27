@@ -27,8 +27,8 @@ rp claude h100-1 -p "Run the training script in /workspace/project"
 # Check progress
 rp status h100-1
 
-# Destroy when done
-rp pod destroy h100-1 -f
+# Sync logs and destroy when done
+rp down h100-1
 ```
 
 ## Commands
@@ -41,6 +41,7 @@ rp pod destroy h100-1 -f
 | `rp claude <alias> [-p PROMPT] [-d DIR]` | Launch Claude in tmux on pod (autonomous or interactive) |
 | `rp status <alias>` | Check remote Claude progress and read report |
 | `rp logs <alias>` | Sync remote Claude logs locally |
+| `rp down <alias> [--skip-logs]` | Sync logs and destroy a pod (counterpart to `rp up`) |
 | `rp setup <alias>` | Re-run pod setup (recovery from partial failures) |
 | `rp secrets list\|set\|remove\|inject` | Manage secrets in macOS Keychain; `inject` pushes to a running pod |
 
