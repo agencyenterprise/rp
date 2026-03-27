@@ -29,10 +29,13 @@ Managed pods are marked with `managed: true` in metadata. On `rp start`, managed
 
 ```bash
 rp up h100                              # from template
-rp up --alias my-pod --gpu 2xH100 --storage 500GB  # explicit
+rp up --gpu 2xH100 --storage 500GB     # explicit (alias auto-generated from settings)
+rp up --gpu 2xH100 --storage 500GB --alias my-pod  # explicit with custom alias
 rp up h100 --alias custom-name          # template with alias override
 rp up h100 --network-volume vol_abc123  # attach a network volume
 ```
+
+When no `--alias` is given (with or without a template), the alias is auto-generated from `{project}_{person}_{i}` using variables from `.rp_settings.json`.
 
 #### `rp claude <alias> [-p PROMPT] [-d DIR]`
 
@@ -97,10 +100,11 @@ rp setup my-pod   # retry failed setup
 Create a pod, add alias, wait for SSH, run `~/.config/rp/setup.sh`. No secret injection or auto-shutdown.
 
 ```bash
-rp create --alias my-pod --gpu 2xA100 --storage 500GB
+rp create --gpu 2xA100 --storage 500GB  # alias auto-generated from settings
+rp create --gpu 2xA100 --storage 500GB --alias my-pod  # explicit alias
 rp create h100                          # from template (auto-numbered alias)
 rp create h100 --alias custom-name      # template with alias override
-rp create --alias my-pod --gpu H100 --storage 0GB --network-volume vol_abc123
+rp create --gpu H100 --storage 0GB --network-volume vol_abc123
 ```
 
 #### `rp start <alias>`

@@ -37,7 +37,7 @@ rp destroy h100-1 -f
 
 | Command | Description |
 |---|---|
-| `rp up [template] [--alias NAME --gpu SPEC --storage SIZE --network-volume ID]` | Create pod + install tools + inject secrets + deploy auto-shutdown |
+| `rp up [template] [--gpu SPEC --storage SIZE] [--alias NAME] [--network-volume ID]` | Create pod + install tools + inject secrets + deploy auto-shutdown |
 | `rp claude <alias> [-p PROMPT] [-d DIR]` | Launch Claude in tmux on pod (autonomous or interactive) |
 | `rp status <alias>` | Check remote Claude progress and read report |
 | `rp logs <alias>` | Sync remote Claude logs locally |
@@ -48,7 +48,7 @@ rp destroy h100-1 -f
 
 | Command | Description |
 |---|---|
-| `rp create [template] [--alias --gpu --storage ...]` | Create bare pod, run setup.sh |
+| `rp create [template] [--gpu --storage ...] [--alias]` | Create bare pod, run setup.sh |
 | `rp start <alias>` | Resume stopped pod (re-injects secrets for managed pods) |
 | `rp stop <alias>` | Stop pod |
 | `rp destroy <alias> [-f]` | Terminate pod permanently |

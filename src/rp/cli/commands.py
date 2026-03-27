@@ -81,6 +81,28 @@ def _auto_clean() -> None:
         pass
 
 
+DEFAULT_ALIAS_TEMPLATE = "{project}_{person}_{i}"
+
+
+def _resolve_default_alias(pod_manager: PodManager) -> str:
+    """Generate an alias from settings using the default pattern {project}_{person}_{i}."""
+    from rp.config import load_template_vars
+
+    template_vars = load_template_vars()
+    missing = [v for v in ("project", "person") if v not in template_vars]
+    if missing:
+        raise ValueError(
+            f"Cannot auto-generate alias: missing {missing}. "
+            f"Define them in .rp_settings.json or as RP_-prefixed env vars "
+            f"(e.g. RP_{missing[0].upper()}=value)."
+        )
+    resolved = DEFAULT_ALIAS_TEMPLATE.replace(
+        "{project}", template_vars["project"]
+    ).replace("{person}", template_vars["person"])
+    next_index = pod_manager.config.find_next_alias_index(resolved)
+    return resolved.format(i=next_index)
+
+
 def create_command(  # noqa: PLR0915  # Function complexity acceptable for main command
     alias: str | None = None,
     gpu: str | None = None,
@@ -97,9 +119,9 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
         pod_manager = get_pod_manager()
 
         # Validate arguments
-        if not template and not (alias and gpu and storage):
+        if not template and not (gpu and storage):
             raise ValueError(
-                "Must specify either a template (as first argument) or all of (--alias, --gpu, --storage)"
+                "Must specify either a template (as first argument) or --gpu and --storage"
             )
 
         if template:
@@ -156,10 +178,12 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
             final_alias = pod.alias
             template_used = template
         else:
-            # Use direct specification mode - at this point we know these are not None due to validation
-            assert alias is not None
+            # Use direct specification mode
             assert gpu is not None
             assert storage is not None
+
+            if not alias:
+                alias = _resolve_default_alias(pod_manager)
 
             gpu_spec = parse_gpu_spec(gpu)
             volume_gb = parse_storage_spec(storage)
@@ -270,10 +294,8 @@ def up_command(
     try:
         pod_manager = get_pod_manager()
 
-        if not template and not (alias and gpu and storage):
-            raise ValueError(
-                "Must specify either a template or all of (--alias, --gpu, --storage)"
-            )
+        if not template and not (gpu and storage):
+            raise ValueError("Must specify either a template or --gpu and --storage")
 
         # Create the pod using existing create logic
         if template:
@@ -298,9 +320,11 @@ def up_command(
                 progress.update(task, description="Pod created successfully")
             final_alias = pod.alias
         else:
-            assert alias is not None
             assert gpu is not None
             assert storage is not None
+
+            if not alias:
+                alias = _resolve_default_alias(pod_manager)
 
             gpu_spec = parse_gpu_spec(gpu)
             volume_gb = parse_storage_spec(storage)
