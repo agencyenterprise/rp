@@ -146,7 +146,7 @@ All data classes use Pydantic for validation:
 
 Both `PodManager` and `Scheduler` follow pattern:
 1. Load config on first property access (`@property config`)
-2. Mutating operations call `_save_config()` to atomically write JSON
+2. Mutating operations use `_locked_config()` context manager: acquire exclusive file lock (`pods.lock`), re-read from disk, yield config for mutation, write back on exit. This prevents concurrent `rp` processes from clobbering each other.
 3. Use `model_dump_json()` for serialization
 
 ## Testing Notes

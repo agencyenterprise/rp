@@ -5,7 +5,9 @@ This module provides high-level operations for managing RunPod instances,
 including creation, lifecycle management, and status tracking.
 """
 
+import fcntl
 import json
+from contextlib import contextmanager
 from typing import Any
 
 from rp.config import POD_CONFIG_FILE, ensure_config_dir_exists
@@ -41,7 +43,8 @@ class PodManager:
         """Get current alias mappings (from both legacy and new format)."""
         return self.config.get_all_aliases()
 
-    def _load_config(self) -> AppConfig:
+    @staticmethod
+    def _load_config() -> AppConfig:
         """Load configuration from storage."""
         try:
             with POD_CONFIG_FILE.open("r") as f:
@@ -59,29 +62,52 @@ class PodManager:
             f.write(self.config.model_dump_json(indent=2))
             f.write("\n")
 
+    @contextmanager
+    def _locked_config(self):
+        """Acquire an exclusive file lock, re-read config from disk, yield it, and save on exit.
+
+        Usage:
+            with self._locked_config() as config:
+                config.add_alias("foo", "pod-123", force=True)
+        On exit the modified config is written to disk and the in-memory cache is updated.
+        """
+        ensure_config_dir_exists()
+        lock_path = POD_CONFIG_FILE.with_suffix(".lock")
+        with lock_path.open("w") as lock_fd:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            try:
+                # Re-read from disk to pick up changes from other processes
+                self._config = self._load_config()
+                yield self._config
+                # Write back
+                with POD_CONFIG_FILE.open("w") as f:
+                    f.write(self._config.model_dump_json(indent=2))
+                    f.write("\n")
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+
     def add_alias(self, alias: str, pod_id: str, force: bool = False) -> None:
         """Add or update an alias mapping."""
-        if not self.config.add_alias(alias, pod_id, force):
-            raise AliasError.already_exists(alias)
-        self._save_config()
+        with self._locked_config() as config:
+            if not config.add_alias(alias, pod_id, force):
+                raise AliasError.already_exists(alias)
 
     def set_managed(self, alias: str, *, managed: bool) -> None:
         """Set the managed flag on a pod's metadata."""
-        if alias in self.config.pod_metadata:
-            self.config.pod_metadata[alias].managed = managed
-            self._save_config()
+        with self._locked_config() as config:
+            if alias in config.pod_metadata:
+                config.pod_metadata[alias].managed = managed
 
     def remove_alias(self, alias: str, missing_ok: bool = False) -> str:
         """Remove an alias mapping, returning the pod ID."""
-        pod_id = self.config.remove_alias(alias)
-        if pod_id is None:
-            if missing_ok:
-                return ""
-            available = list(self.aliases.keys())
-            raise AliasError.not_found(alias, available)
-
-        self._save_config()
-        return pod_id
+        with self._locked_config() as config:
+            pod_id = config.remove_alias(alias)
+            if pod_id is None:
+                if missing_ok:
+                    return ""
+                available = list(config.get_all_aliases().keys())
+                raise AliasError.not_found(alias, available)
+            return pod_id
 
     def get_pod_id(self, alias: str) -> str:
         """Get pod ID for an alias, raising error if not found."""
@@ -158,9 +184,9 @@ class PodManager:
 
         pod_id = created["id"]
 
-        # Save the alias mapping
-        self.config.add_alias(request.alias, pod_id, force=request.force)
-        self._save_config()
+        # Save the alias mapping (locked to prevent concurrent overwrites)
+        with self._locked_config() as config:
+            config.add_alias(request.alias, pod_id, force=request.force)
 
         # Wait for pod to be ready
         pod_data = self.api_client.wait_for_pod_ready(pod_id)
@@ -238,9 +264,9 @@ class PodManager:
     # Template management methods
     def add_template(self, template: PodTemplate, force: bool = False) -> None:
         """Add or update a pod template."""
-        if not self.config.add_template(template, force):
-            raise AliasError.already_exists(template.identifier)
-        self._save_config()
+        with self._locked_config() as config:
+            if not config.add_template(template, force):
+                raise AliasError.already_exists(template.identifier)
 
     def get_template(self, identifier: str) -> PodTemplate:
         """Get a pod template by identifier (checks user templates, then defaults)."""
@@ -271,13 +297,12 @@ class PodManager:
                 "Default templates are read-only."
             )
 
-        template = self.config.remove_template(identifier)
-        if template is None and not missing_ok:
-            user_templates = list(self.config.pod_templates.keys())
-            raise AliasError.not_found(identifier, user_templates)
-        if template is not None:
-            self._save_config()
-        return template
+        with self._locked_config() as config:
+            template = config.remove_template(identifier)
+            if template is None and not missing_ok:
+                user_templates = list(config.pod_templates.keys())
+                raise AliasError.not_found(identifier, user_templates)
+            return template
 
     def list_templates(self) -> list[PodTemplate]:
         """List all pod templates (user templates override defaults with same identifier)."""
@@ -303,13 +328,20 @@ class PodManager:
 
         template = self.get_template(template_identifier)
 
-        # Use alias override if provided, otherwise find next available index
+        # Use alias override if provided, otherwise find next available index.
+        # Auto-numbering is done under the config lock so two concurrent `rp up`
+        # calls don't race for the same alias slot.
         if alias_override:
             alias = alias_override
         else:
-            resolved_template = template.resolve_alias_template(load_template_vars())
-            next_index = self.config.find_next_alias_index(resolved_template)
-            alias = resolved_template.format(i=next_index)
+            with self._locked_config() as config:
+                resolved_template = template.resolve_alias_template(
+                    load_template_vars()
+                )
+                next_index = config.find_next_alias_index(resolved_template)
+                alias = resolved_template.format(i=next_index)
+                # Reserve the alias with a placeholder so the next caller skips it
+                config.add_alias(alias, "pending", force=force)
 
         # Create the pod request
         from rp.cli.utils import parse_gpu_spec, parse_storage_spec
@@ -325,11 +357,13 @@ class PodManager:
         image = template.image or PodCreateRequest.model_fields["image"].default
         nv_id = network_volume_id or template.network_volume_id
 
+        # force=True when alias was auto-numbered, since we reserved it as "pending"
+        effective_force = force or (alias_override is None)
         request = PodCreateRequest(
             alias=alias,
             gpu_spec=gpu_spec,
             volume_gb=volume_gb,
-            force=force,
+            force=effective_force,
             dry_run=dry_run,
             container_disk_gb=container_disk_gb,
             image=image,

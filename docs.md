@@ -249,6 +249,8 @@ The following files in `~/.config/rp/` are still supported:
 
 Each alias maps to a `PodMetadata` with `pod_id` and `managed` flag.
 
+All writes to `pods.json` are protected by an exclusive file lock (`pods.lock`) so that concurrent `rp` processes (e.g. two Claude Code sessions) don't clobber each other's changes. Every mutating operation re-reads from disk under the lock before writing back.
+
 ### SSH Config
 
 Managed blocks in `~/.ssh/config` identified by `# rp:managed alias=<alias> pod_id=<id> updated=<timestamp>`. Created on start, removed on stop/destroy, pruned by clean. Don't edit manually.
