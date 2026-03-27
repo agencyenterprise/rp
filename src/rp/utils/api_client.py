@@ -210,8 +210,8 @@ class RunPodAPIClient:
                 raise
             raise APIError.connection_failed(str(e)) from e
 
-    def find_gpu_type_id(self, model_key: str) -> str:
-        """Find GPU type ID by model name, preferring highest VRAM."""
+    def find_gpu_type_ids(self, model_key: str) -> list[str]:
+        """Find matching GPU type IDs by model name, ranked by VRAM descending."""
         gpus = self.get_gpus()
         model_upper = model_key.upper()
         candidates: list[tuple[float, str]] = []
@@ -231,12 +231,12 @@ class RunPodAPIClient:
         if not candidates:
             raise APIError.invalid_response(
                 f"Could not find GPU type matching '{model_key}'. "
-                "Try a different value (e.g., A100, H100, L40S)."
+                "Try a different value (e.g., A100, H100, L40S). "
+                "Use 'rp gpus' to see all available types."
             )
 
-        # Sort by memory (descending) and return the highest memory variant
         candidates.sort(key=lambda x: x[0], reverse=True)
-        return candidates[0][1]
+        return [gpu_id for _, gpu_id in candidates]
 
     def extract_network_info(
         self, pod_data: dict[str, Any]

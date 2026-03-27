@@ -6,6 +6,7 @@ including creation, lifecycle management, and status tracking.
 """
 
 import json
+from typing import Any
 
 from rp.config import POD_CONFIG_FILE, ensure_config_dir_exists
 from rp.core.default_templates import get_default_templates, is_default_template
@@ -17,7 +18,7 @@ from rp.core.models import (
     PodTemplate,
 )
 from rp.utils.api_client import RunPodAPIClient
-from rp.utils.errors import AliasError, PodError
+from rp.utils.errors import AliasError, APIError, PodError
 
 
 class PodManager:
@@ -126,22 +127,34 @@ class PodManager:
                 request.alias, "dry-run-pod", PodStatus.STOPPED
             )
 
-        # Resolve GPU type ID
-        gpu_type_id = self.api_client.find_gpu_type_id(request.gpu_spec.model)
+        # Resolve GPU type IDs (ranked by VRAM, may have multiple variants)
+        gpu_type_ids = self.api_client.find_gpu_type_ids(request.gpu_spec.model)
 
-        # Create the pod
-        created = self.api_client.create_pod(
-            name=request.alias,
-            image_name=request.image,
-            gpu_type_id=gpu_type_id,
-            gpu_count=request.gpu_spec.count,
-            volume_in_gb=request.volume_gb,
-            container_disk_in_gb=request.container_disk_gb,
-            support_public_ip=True,
-            start_ssh=True,
-            ports=request.ports,
-            network_volume_id=request.network_volume_id,
-        )
+        # Try each GPU variant until one succeeds
+        last_error: Exception | None = None
+        created: dict[str, Any] | None = None
+        for gpu_type_id in gpu_type_ids:
+            try:
+                created = self.api_client.create_pod(
+                    name=request.alias,
+                    image_name=request.image,
+                    gpu_type_id=gpu_type_id,
+                    gpu_count=request.gpu_spec.count,
+                    volume_in_gb=request.volume_gb,
+                    container_disk_in_gb=request.container_disk_gb,
+                    support_public_ip=True,
+                    start_ssh=True,
+                    ports=request.ports,
+                    network_volume_id=request.network_volume_id,
+                )
+                break
+            except (PodError, APIError) as e:
+                last_error = e
+                continue
+
+        if created is None:
+            assert last_error is not None
+            raise last_error
 
         pod_id = created["id"]
 
