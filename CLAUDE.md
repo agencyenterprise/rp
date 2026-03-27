@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`rp` is a CLI wrapper around the RunPod Python API for managing GPU pods. It provides two tiers of pod management: low-level (create/start/stop/destroy) and opinionated (`rp up` with full setup, secret injection, auto-shutdown). Also includes remote Claude session management, macOS Keychain secret storage, alias system, template-based deployment, and SSH config management.
+`rp` is a CLI wrapper around the RunPod Python API for managing GPU pods. It provides two tiers of pod management: low-level (`rp pod create/start/stop/destroy`) and opinionated (top-level `rp up` with full setup, secret injection, auto-shutdown). Also includes remote Claude session management, macOS Keychain secret storage, alias system, template-based deployment, and SSH config management.
 
 **Key documentation**: `docs.md` contains comprehensive technical documentation including all commands, configuration files, and internal behavior. Read this first for complete context.
 

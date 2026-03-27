@@ -1251,7 +1251,7 @@ wheels = [
 
 [[package]]
 name = "rp"
-version = "0.5.1"
+version = "0.7.0"
 source = { editable = "." }
 dependencies = [
     { name = "pycares" },

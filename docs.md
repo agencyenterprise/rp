@@ -1,6 +1,6 @@
 # rp — RunPod CLI
 
-CLI wrapper around the RunPod Python API for managing GPU pods. Two tiers of pod management: **low-level** (bare pods) and **opinionated** (managed pods with tools, secrets, auto-shutdown, remote Claude).
+CLI wrapper around the RunPod Python API for managing GPU pods. Two tiers of pod management: **low-level** (`rp pod` subcommands for bare pods) and **opinionated** (top-level commands for managed pods with tools, secrets, auto-shutdown, remote Claude).
 
 ## Installation
 
@@ -23,7 +23,7 @@ API key priority: `RUNPOD_API_KEY` env var → macOS Keychain → interactive pr
 
 Create a pod with full opinionated setup. This is the recommended way to create pods.
 
-Uses `rp create` under the hood, then layers on: tool installation (uv, tmux, aws CLI, claude CLI, node), non-root `user` account (required by Claude CLI), secret injection from Keychain, and GPU idle auto-shutdown cron (120 min default).
+Uses `rp pod create` under the hood, then layers on: tool installation (uv, tmux, aws CLI, claude CLI, node), non-root `user` account (required by Claude CLI), secret injection from Keychain, and GPU idle auto-shutdown cron (120 min default).
 
 Managed pods are marked with `managed: true` in metadata. On `rp start`, managed pods get secrets re-injected and auto-shutdown redeployed.
 
@@ -93,54 +93,6 @@ Useful for recovery when `rp up` creates the pod but setup fails mid-way (e.g. S
 rp setup my-pod   # retry failed setup
 ```
 
-### Low-Level Commands (Bare Pods)
-
-#### `rp create [template] [--alias NAME] [--gpu SPEC] [--storage SIZE] [--container-disk SIZE] [--image IMAGE] [--network-volume ID] [-f] [--dry-run]`
-
-Create a pod, add alias, wait for SSH, run `~/.config/rp/setup.sh`. No secret injection or auto-shutdown.
-
-```bash
-rp create --gpu 2xA100 --storage 500GB  # alias auto-generated from settings
-rp create --gpu 2xA100 --storage 500GB --alias my-pod  # explicit alias
-rp create h100                          # from template (auto-numbered alias)
-rp create h100 --alias custom-name      # template with alias override
-rp create --gpu H100 --storage 0GB --network-volume vol_abc123
-```
-
-#### `rp start <alias>`
-
-Resume a stopped pod. Updates SSH config. For managed pods, re-injects secrets and redeploys auto-shutdown. For bare pods, re-runs setup script.
-
-#### `rp stop <alias>`
-
-Stop a running pod immediately. Removes SSH config entry.
-
-#### `rp destroy <alias> [-f]`
-
-Terminate pod permanently, remove alias and SSH config. Prompts for confirmation unless `-f`.
-
-### Alias & Tracking
-
-#### `rp track <pod_id_or_name> [alias] [-f]`
-
-Track an existing RunPod pod. First arg can be a pod ID or name. If no alias given, uses the pod's RunPod name. Updates SSH config if pod is running.
-
-#### `rp untrack <alias> [--missing-ok]`
-
-Remove alias mapping. Does not terminate the pod.
-
-#### `rp list`
-
-Table of all pods: alias, ID, status (running/stopped/invalid).
-
-#### `rp show <alias>`
-
-Detailed pod info: ID, status, GPU, storage, cost, IP, image. For managed running pods, also shows Claude session status and the last few lines of activity if Claude is running.
-
-#### `rp clean`
-
-Remove aliases pointing to deleted pods, prune orphaned SSH config blocks. Runs automatically after API commands.
-
 ### Connection
 
 #### `rp run <alias> -- <command>`
@@ -160,6 +112,66 @@ Interactive SSH shell with agent forwarding.
 
 Open VS Code via remote SSH. Default path: `/workspace`.
 
+### Low-Level Commands (`rp pod`)
+
+All low-level pod management commands live under the `rp pod` subcommand.
+
+#### `rp pod create [template] [--alias NAME] [--gpu SPEC] [--storage SIZE] [--container-disk SIZE] [--image IMAGE] [--network-volume ID] [-f] [--dry-run]`
+
+Create a bare pod, add alias, wait for SSH, run `~/.config/rp/setup.sh`. No secret injection or auto-shutdown. Use `rp up` for full managed setup.
+
+```bash
+rp pod create --gpu 2xA100 --storage 500GB  # alias auto-generated from settings
+rp pod create --gpu 2xA100 --storage 500GB --alias my-pod  # explicit alias
+rp pod create h100                          # from template (auto-numbered alias)
+rp pod create h100 --alias custom-name      # template with alias override
+rp pod create --gpu H100 --storage 0GB --network-volume vol_abc123
+```
+
+#### `rp pod start <alias>`
+
+Resume a stopped pod. Updates SSH config. For managed pods, re-injects secrets and redeploys auto-shutdown. For bare pods, re-runs setup script.
+
+#### `rp pod stop <alias>`
+
+Stop a running pod immediately. Removes SSH config entry.
+
+#### `rp pod destroy <alias> [-f]`
+
+Terminate pod permanently, remove alias and SSH config. Prompts for confirmation unless `-f`.
+
+#### `rp pod track <pod_id_or_name> [alias] [-f]`
+
+Track an existing RunPod pod. First arg can be a pod ID or name. If no alias given, uses the pod's RunPod name. Updates SSH config if pod is running.
+
+#### `rp pod untrack <alias> [--missing-ok]`
+
+Remove alias mapping. Does not terminate the pod.
+
+#### `rp pod list`
+
+Table of all pods: alias, ID, status (running/stopped/invalid).
+
+#### `rp pod show <alias>`
+
+Detailed pod info: ID, status, GPU, storage, cost, IP, image. For managed running pods, also shows Claude session status and the last few lines of activity if Claude is running.
+
+#### `rp pod clean`
+
+Remove aliases pointing to deleted pods, prune orphaned SSH config blocks. Runs automatically after API commands.
+
+#### `rp pod gpus [--filter EXPR]`
+
+List available GPU types from RunPod, sorted by VRAM descending. Optionally filter by VRAM with comparison expressions.
+
+```bash
+rp pod gpus                    # list all available GPU types
+rp pod gpus -f 'vram>=80'      # only GPUs with 80+ GB VRAM
+rp pod gpus -f 'vram<24'       # only GPUs with less than 24 GB VRAM
+```
+
+The GPU ID or display name substring can be used as the `--gpu` argument in `rp pod create`, `rp up`, and `rp template create`.
+
 ### Templates
 
 #### `rp template create <id> --alias-pattern PATTERN --gpu SPEC --storage SIZE [--container-disk SIZE] [--image IMAGE] [--network-volume ID] [-f]`
@@ -174,18 +186,6 @@ rp template create ml-nv --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 -
 #### `rp template list` / `rp template delete <id>`
 
 List or delete templates. Built-in defaults: `h100`, `2h100`, `5090`, `a40` (all use `{project}_{person}_{i}` pattern).
-
-#### `rp gpus [--filter EXPR]`
-
-List available GPU types from RunPod, sorted by VRAM descending. Optionally filter by VRAM with comparison expressions.
-
-```bash
-rp gpus                    # list all available GPU types
-rp gpus -f 'vram>=80'      # only GPUs with 80+ GB VRAM
-rp gpus -f 'vram<24'       # only GPUs with less than 24 GB VRAM
-```
-
-The GPU ID or display name substring can be used as the `--gpu` argument in `rp create`, `rp up`, and `rp template create`.
 
 ---
 

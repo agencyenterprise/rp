@@ -1,15 +1,14 @@
 """
-Main entry point for the RunPod CLI wrapper (refactored version).
+Main entry point for the RunPod CLI wrapper.
 
-This module provides the main application entry point and command-line interface
-using the refactored service layer architecture.
+Commands are split into two tiers:
+- Top-level: opinionated workflow (up, claude, run, shell, etc.)
+- `rp pod`: low-level pod management (create, start, stop, destroy, etc.)
 """
 
 import json
 
-import click
 import typer
-from typer.core import TyperGroup
 
 from rp.cli.commands import (
     claude_command,
@@ -63,29 +62,143 @@ def complete_template(incomplete: str) -> list[str]:
         return []
 
 
-class OrderedGroup(TyperGroup):
-    """Custom group to control command order in help."""
-
-    def list_commands(self, ctx: click.Context) -> list[str]:  # noqa: ARG002
-        preferred = ["create", "destroy", "track"]
-        all_cmds = list(self.commands.keys())
-        rest = [c for c in all_cmds if c not in preferred]
-        return preferred + rest
-
-
 # Main application
 app = typer.Typer(
-    help="RunPod utility for starting and stopping pods", cls=OrderedGroup
+    help="RunPod CLI — managed GPU pods with tools, secrets, and remote Claude"
 )
 
-# Template sub-application
+# Sub-applications
+pod_app = typer.Typer(
+    help="Low-level pod management (create, start, stop, destroy, etc.)"
+)
 template_app = typer.Typer(help="Manage pod templates")
-
-# Secrets sub-application
 secrets_app = typer.Typer(help="Manage secrets stored in macOS Keychain")
 
 
+# ── Top-level commands (opinionated workflow) ────────────────────────
+
+
 @app.command()
+def up(
+    template: str = typer.Argument(
+        None,
+        help="Template identifier to use",
+        autocompletion=complete_template,
+    ),
+    alias: str = typer.Option(None, "--alias", help="SSH host alias to assign"),
+    gpu: str = typer.Option(None, "--gpu", help="GPU spec like '2xA100'"),
+    storage: str = typer.Option(
+        None, "--storage", help="Volume size like '500GB' or '1TB'"
+    ),
+    network_volume: str = typer.Option(
+        None,
+        "--network-volume",
+        help="RunPod network volume ID to attach (mounted at /workspace)",
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Overwrite alias if it exists"
+    ),
+):
+    """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
+    up_command(template, alias, gpu, storage, force, network_volume)
+
+
+@app.command()
+def setup(
+    alias: str = typer.Argument(
+        None,
+        help="Pod alias to run setup on",
+        autocompletion=complete_alias,
+    ),
+):
+    """Re-run pod setup (tools, secrets, auto-shutdown). Useful for recovery after partial failures."""
+    setup_command(alias)
+
+
+@app.command(
+    "run",
+    context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
+)
+def run(
+    ctx: typer.Context,
+    alias: str = typer.Argument(
+        ..., help="Pod alias to run command on", autocompletion=complete_alias
+    ),
+    root: bool = typer.Option(
+        False, "--root", help="Run as root instead of the default non-root user"
+    ),
+):
+    """Execute a command on a remote pod via SSH.
+
+    Commands run as the non-root 'user' by default (matching rp claude).
+    Use --root for operations that need root (e.g. apt install).
+
+    Example: rp run my-pod -- ls -la /workspace
+    """
+    args = [a for a in ctx.args if a != "--"]
+    if not args:
+        console.print(
+            "❌ No command specified. Usage: rp run <alias> <command>", style="red"
+        )
+        raise typer.Exit(1)
+    run_command(alias, args, as_root=root)
+
+
+@app.command()
+def shell(
+    alias: str = typer.Argument(
+        None, help="Pod alias to connect to", autocompletion=complete_alias
+    ),
+):
+    """Open an interactive SSH shell to the pod."""
+    shell_command(alias)
+
+
+@app.command()
+def code(
+    alias: str = typer.Argument(
+        None, help="Pod alias to connect to", autocompletion=complete_alias
+    ),
+    path: str = typer.Argument(None, help="Remote path to open (default: /workspace)"),
+):
+    """Open VS Code editor with remote SSH connection to pod."""
+    code_command(alias, path)
+
+
+@app.command("claude")
+def claude_cmd(
+    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
+    prompt: str = typer.Option(
+        None, "--prompt", "-p", help="Prompt for autonomous mode"
+    ),
+    working_dir: str = typer.Option(
+        None, "--dir", "-d", help="Working directory on pod"
+    ),
+):
+    """Launch remote Claude on a pod."""
+    claude_command(alias, prompt, working_dir)
+
+
+@app.command()
+def status(
+    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
+):
+    """Check remote Claude progress on a pod."""
+    status_command(alias)
+
+
+@app.command()
+def logs(
+    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
+):
+    """Sync and view logs from a remote pod."""
+    logs_command(alias)
+
+
+# ── Pod subcommands (low-level management) ───────────────────────────
+
+
+@pod_app.command()
 def create(
     template: str = typer.Argument(
         None,
@@ -119,7 +232,7 @@ def create(
         False, "--dry-run", help="Show actions without creating"
     ),
 ):
-    """Create a new RunPod instance, add alias, wait for SSH, and run setup scripts."""
+    """Create a bare pod (no managed setup). Use 'rp up' for full setup."""
     create_command(
         alias,
         gpu,
@@ -133,32 +246,7 @@ def create(
     )
 
 
-@app.command()
-def up(
-    template: str = typer.Argument(
-        None,
-        help="Template identifier to use",
-        autocompletion=complete_template,
-    ),
-    alias: str = typer.Option(None, "--alias", help="SSH host alias to assign"),
-    gpu: str = typer.Option(None, "--gpu", help="GPU spec like '2xA100'"),
-    storage: str = typer.Option(
-        None, "--storage", help="Volume size like '500GB' or '1TB'"
-    ),
-    network_volume: str = typer.Option(
-        None,
-        "--network-volume",
-        help="RunPod network volume ID to attach (mounted at /workspace)",
-    ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Overwrite alias if it exists"
-    ),
-):
-    """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
-    up_command(template, alias, gpu, storage, force, network_volume)
-
-
-@app.command()
+@pod_app.command()
 def start(
     host_alias: str = typer.Argument(
         None,
@@ -166,11 +254,11 @@ def start(
         autocompletion=complete_alias,
     ),
 ):
-    """Start and configure a RunPod instance."""
+    """Start/resume a stopped pod."""
     start_command(host_alias)
 
 
-@app.command()
+@pod_app.command()
 def stop(
     host_alias: str = typer.Argument(
         None,
@@ -178,11 +266,11 @@ def stop(
         autocompletion=complete_alias,
     ),
 ):
-    """Stop a RunPod instance."""
+    """Stop a running pod."""
     stop_command(host_alias)
 
 
-@app.command()
+@pod_app.command()
 def destroy(
     host_alias: str = typer.Argument(
         None,
@@ -191,11 +279,11 @@ def destroy(
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
-    """Terminate a pod, remove SSH config, and delete the alias mapping."""
+    """Terminate a pod permanently, remove alias and SSH config."""
     destroy_command(host_alias, force)
 
 
-@app.command()
+@pod_app.command()
 def track(
     pod_id: str = typer.Argument(..., help="RunPod pod ID or pod name"),
     alias: str = typer.Argument(
@@ -209,7 +297,7 @@ def track(
     track_command(alias, pod_id, force)
 
 
-@app.command()
+@pod_app.command()
 def untrack(
     alias: str = typer.Argument(
         None, help="Alias name to remove", autocompletion=complete_alias
@@ -218,17 +306,17 @@ def untrack(
         False, "--missing-ok", help="Do not error if alias is missing"
     ),
 ):
-    """Stop tracking a pod (removes alias mapping)."""
+    """Stop tracking a pod (removes alias mapping, doesn't terminate)."""
     untrack_command(alias, missing_ok)
 
 
-@app.command("list")
+@pod_app.command("list")
 def list_aliases():
-    """List all aliases as a table: Alias, ID, Status (running, stopped, invalid)."""
+    """List all pods: alias, ID, status."""
     list_command()
 
 
-@app.command()
+@pod_app.command()
 def show(
     alias: str = typer.Argument(
         None, help="Pod alias to show details for", autocompletion=complete_alias
@@ -238,22 +326,23 @@ def show(
     show_command(alias)
 
 
-@app.command()
+@pod_app.command()
 def clean():
-    """Remove invalid aliases and prune rp-managed SSH blocks no longer valid."""
+    """Remove invalid aliases and prune orphaned SSH config blocks."""
     clean_command()
 
 
-@app.command()
-def setup(
-    alias: str = typer.Argument(
-        None,
-        help="Pod alias to run setup on",
-        autocompletion=complete_alias,
+@pod_app.command()
+def gpus(
+    filter: str = typer.Option(
+        None, "--filter", "-f", help="Filter GPUs, e.g. 'vram>=80' or 'vram<24'"
     ),
 ):
-    """Re-run pod setup (tools, secrets, auto-shutdown). Useful for recovery after partial failures."""
-    setup_command(alias)
+    """List available GPU types from RunPod."""
+    gpus_command(filter)
+
+
+# ── Template subcommands ─────────────────────────────────────────────
 
 
 @template_app.command("create")
@@ -319,84 +408,7 @@ def template_delete(
     template_delete_command(identifier, missing_ok)
 
 
-@app.command()
-def code(
-    alias: str = typer.Argument(
-        None, help="Pod alias to connect to", autocompletion=complete_alias
-    ),
-    path: str = typer.Argument(None, help="Remote path to open (default: /workspace)"),
-):
-    """Open VS Code editor with remote SSH connection to pod."""
-    code_command(alias, path)
-
-
-@app.command()
-def shell(
-    alias: str = typer.Argument(
-        None, help="Pod alias to connect to", autocompletion=complete_alias
-    ),
-):
-    """Open an interactive SSH shell to the pod."""
-    shell_command(alias)
-
-
-@app.command(
-    "run",
-    context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
-)
-def run(
-    ctx: typer.Context,
-    alias: str = typer.Argument(
-        ..., help="Pod alias to run command on", autocompletion=complete_alias
-    ),
-    root: bool = typer.Option(
-        False, "--root", help="Run as root instead of the default non-root user"
-    ),
-):
-    """Execute a command on a remote pod via SSH.
-
-    Commands run as the non-root 'user' by default (matching rp claude).
-    Use --root for operations that need root (e.g. apt install).
-
-    Example: rp run my-pod -- ls -la /workspace
-    """
-    args = [a for a in ctx.args if a != "--"]
-    if not args:
-        console.print(
-            "❌ No command specified. Usage: rp run <alias> <command>", style="red"
-        )
-        raise typer.Exit(1)
-    run_command(alias, args, as_root=root)
-
-
-@app.command("claude")
-def claude_cmd(
-    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
-    prompt: str = typer.Option(
-        None, "--prompt", "-p", help="Prompt for autonomous mode"
-    ),
-    working_dir: str = typer.Option(
-        None, "--dir", "-d", help="Working directory on pod"
-    ),
-):
-    """Launch remote Claude on a pod."""
-    claude_command(alias, prompt, working_dir)
-
-
-@app.command()
-def status(
-    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
-):
-    """Check remote Claude progress on a pod."""
-    status_command(alias)
-
-
-@app.command()
-def logs(
-    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
-):
-    """Sync and view logs from a remote pod."""
-    logs_command(alias)
+# ── Secrets subcommands ──────────────────────────────────────────────
 
 
 @secrets_app.command("list")
@@ -444,18 +456,12 @@ def secrets_inject(
     secrets_inject_command(alias)
 
 
-@app.command()
-def gpus(
-    filter: str = typer.Option(
-        None, "--filter", "-f", help="Filter GPUs, e.g. 'vram>=80' or 'vram<24'"
-    ),
-):
-    """List available GPU types from RunPod."""
-    gpus_command(filter)
+# ── Entry point ──────────────────────────────────────────────────────
 
 
 def main():
     """Main entry point."""
+    app.add_typer(pod_app, name="pod")
     app.add_typer(template_app, name="template")
     app.add_typer(secrets_app, name="secrets")
     app()

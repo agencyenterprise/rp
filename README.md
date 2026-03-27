@@ -1,6 +1,6 @@
 # rp — RunPod CLI
 
-A CLI for managing RunPod GPU pods. Two tiers: **low-level** (`rp create`) for bare pods, and **opinionated** (`rp up`) for fully configured pods with tools, secrets, auto-shutdown, and remote Claude support.
+A CLI for managing RunPod GPU pods. Two tiers: **low-level** (`rp pod create`) for bare pods, and **opinionated** (`rp up`) for fully configured pods with tools, secrets, auto-shutdown, and remote Claude support.
 
 ## Install
 
@@ -28,7 +28,7 @@ rp claude h100-1 -p "Run the training script in /workspace/project"
 rp status h100-1
 
 # Destroy when done
-rp destroy h100-1 -f
+rp pod destroy h100-1 -f
 ```
 
 ## Commands
@@ -44,23 +44,28 @@ rp destroy h100-1 -f
 | `rp setup <alias>` | Re-run pod setup (recovery from partial failures) |
 | `rp secrets list\|set\|remove\|inject` | Manage secrets in macOS Keychain; `inject` pushes to a running pod |
 
-### Low-Level
+### Connection & Execution
 
 | Command | Description |
 |---|---|
-| `rp create [template] [--gpu --storage ...] [--alias]` | Create bare pod, run setup.sh |
-| `rp start <alias>` | Resume stopped pod (re-injects secrets for managed pods) |
-| `rp stop <alias>` | Stop pod |
-| `rp destroy <alias> [-f]` | Terminate pod permanently |
-| `rp track <pod_id_or_name> [alias]` | Track existing pod by ID or name |
-| `rp untrack <alias>` | Stop tracking (doesn't terminate) |
-| `rp list` | List all pods with status |
-| `rp show <alias>` | Detailed pod info |
-| `rp clean` | Remove invalid aliases and orphaned SSH config |
 | `rp run <alias> -- <cmd>` | Execute command on pod via SSH |
 | `rp shell <alias>` | Interactive SSH shell |
 | `rp code <alias> [path]` | Open VS Code remote SSH |
-| `rp gpus [-f FILTER]` | List available GPU types (e.g. `-f 'vram>=80'`) |
+
+### Low-Level (`rp pod`)
+
+| Command | Description |
+|---|---|
+| `rp pod create [template] [--gpu --storage ...] [--alias]` | Create bare pod, run setup.sh |
+| `rp pod start <alias>` | Resume stopped pod (re-injects secrets for managed pods) |
+| `rp pod stop <alias>` | Stop pod |
+| `rp pod destroy <alias> [-f]` | Terminate pod permanently |
+| `rp pod track <pod_id_or_name> [alias]` | Track existing pod by ID or name |
+| `rp pod untrack <alias>` | Stop tracking (doesn't terminate) |
+| `rp pod list` | List all pods with status |
+| `rp pod show <alias>` | Detailed pod info |
+| `rp pod clean` | Remove invalid aliases and orphaned SSH config |
+| `rp pod gpus [-f FILTER]` | List available GPU types (e.g. `-f 'vram>=80'`) |
 
 ### Templates
 
@@ -70,10 +75,10 @@ Built-in: `h100`, `2h100`, `5090`, `a40` (all 500GB container disk, no volume, u
 # Set naming variables in .rp_settings.json (or ~/.rp_settings.json for global)
 echo '{"project": "ast", "person": "alex"}' > .rp_settings.json
 
-rp create h100      # creates ast_alex_1, ast_alex_2, etc.
+rp pod create h100      # creates ast_alex_1, ast_alex_2, etc.
 
 # Override per-command
-RP_PROJECT=other rp create h100   # creates other_alex_1
+RP_PROJECT=other rp pod create h100   # creates other_alex_1
 
 # Custom templates
 rp template create ml --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --storage 1TB
