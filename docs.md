@@ -171,6 +171,18 @@ rp template create ml-nv --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 -
 
 List or delete templates. Built-in defaults: `h100`, `2h100`, `5090`, `a40` (all use `{project}_{person}_{i}` pattern).
 
+#### `rp gpus [--filter EXPR]`
+
+List available GPU types from RunPod, sorted by VRAM descending. Optionally filter by VRAM with comparison expressions.
+
+```bash
+rp gpus                    # list all available GPU types
+rp gpus -f 'vram>=80'      # only GPUs with 80+ GB VRAM
+rp gpus -f 'vram<24'       # only GPUs with less than 24 GB VRAM
+```
+
+The GPU ID or display name substring can be used as the `--gpu` argument in `rp create`, `rp up`, and `rp template create`.
+
 ---
 
 ## Configuration

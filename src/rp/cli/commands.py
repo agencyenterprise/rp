@@ -775,6 +775,74 @@ def template_list_command() -> None:
         handle_cli_error(e)
 
 
+def gpus_command(filter_expr: str | None = None) -> None:
+    """List available GPU types from RunPod."""
+    import re
+
+    try:
+        api_client = setup_api_client()
+        gpus = api_client.get_gpus()
+
+        # Parse filter expression like "vram>=80" or "vram>40"
+        filter_fn = None
+        if filter_expr:
+            match = re.match(
+                r"vram\s*(>=|<=|>|<|=)\s*(\d+)", filter_expr, re.IGNORECASE
+            )
+            if not match:
+                console.print(
+                    "[red]Invalid filter. Use e.g. 'vram>=80' or 'vram>40'[/red]"
+                )
+                raise typer.Exit(1)
+            op_str, threshold = match.group(1), float(match.group(2))
+            import operator
+
+            ops = {
+                ">=": operator.ge,
+                "<=": operator.le,
+                ">": operator.gt,
+                "<": operator.lt,
+                "=": operator.eq,
+            }
+            op = ops[op_str]
+            filter_fn = lambda gpu: op(float(gpu.get("memoryInGb") or 0), threshold)  # noqa: E731
+
+        # Sort by VRAM descending, then name
+        gpus.sort(
+            key=lambda g: (-(float(g.get("memoryInGb") or 0)), g.get("displayName", ""))
+        )
+
+        if filter_fn:
+            gpus = [g for g in gpus if filter_fn(g)]
+
+        if not gpus:
+            console.print("No GPUs found matching filter.")
+            return
+
+        from rich.table import Table
+
+        table = Table(title="Available GPU Types")
+        table.add_column("ID", style="cyan", no_wrap=True)
+        table.add_column("Name", style="green")
+        table.add_column("VRAM (GB)", style="yellow", justify="right")
+
+        for gpu in gpus:
+            mem = gpu.get("memoryInGb")
+            mem_str = f"{mem}" if mem is not None else "?"
+            table.add_row(
+                str(gpu.get("id", "")),
+                str(gpu.get("displayName", "")),
+                mem_str,
+            )
+
+        console.print(table)
+
+    except Exception as e:
+        if isinstance(e, typer.Exit | SystemExit):
+            raise
+        handle_cli_error(e)
+
+
 def template_delete_command(identifier: str, missing_ok: bool = False) -> None:
     """Delete a pod template."""
     try:

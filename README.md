@@ -60,6 +60,7 @@ rp destroy h100-1 -f
 | `rp run <alias> -- <cmd>` | Execute command on pod via SSH |
 | `rp shell <alias>` | Interactive SSH shell |
 | `rp code <alias> [path]` | Open VS Code remote SSH |
+| `rp gpus [-f FILTER]` | List available GPU types (e.g. `-f 'vram>=80'`) |
 
 ### Templates
 

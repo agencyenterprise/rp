@@ -17,6 +17,7 @@ from rp.cli.commands import (
     code_command,
     create_command,
     destroy_command,
+    gpus_command,
     list_command,
     logs_command,
     run_command,
@@ -441,6 +442,16 @@ def secrets_inject(
 ):
     """Push secrets from Keychain to a running pod."""
     secrets_inject_command(alias)
+
+
+@app.command()
+def gpus(
+    filter: str = typer.Option(
+        None, "--filter", "-f", help="Filter GPUs, e.g. 'vram>=80' or 'vram<24'"
+    ),
+):
+    """List available GPU types from RunPod."""
+    gpus_command(filter)
 
 
 def main():
