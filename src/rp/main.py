@@ -348,8 +348,14 @@ def run(
     alias: str = typer.Argument(
         ..., help="Pod alias to run command on", autocompletion=complete_alias
     ),
+    root: bool = typer.Option(
+        False, "--root", help="Run as root instead of the default non-root user"
+    ),
 ):
     """Execute a command on a remote pod via SSH.
+
+    Commands run as the non-root 'user' by default (matching rp claude).
+    Use --root for operations that need root (e.g. apt install).
 
     Example: rp run my-pod -- ls -la /workspace
     """
@@ -359,7 +365,7 @@ def run(
             "❌ No command specified. Usage: rp run <alias> <command>", style="red"
         )
         raise typer.Exit(1)
-    run_command(alias, args)
+    run_command(alias, args, as_root=root)
 
 
 @app.command("claude")

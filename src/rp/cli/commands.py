@@ -836,8 +836,15 @@ def shell_command(alias: str | None) -> None:
         handle_cli_error(e)
 
 
-def run_command(alias: str | None, command: list[str]) -> None:
-    """Execute a command on a remote pod via SSH."""
+def run_command(
+    alias: str | None, command: list[str], *, as_root: bool = False
+) -> None:
+    """Execute a command on a remote pod via SSH.
+
+    By default, commands run as the non-root 'user' account (matching the user
+    that ``rp claude`` operates under).  Pass ``as_root=True`` for operations
+    that genuinely need root (e.g. apt install).
+    """
     try:
         import shlex
         import subprocess
@@ -847,9 +854,13 @@ def run_command(alias: str | None, command: list[str]) -> None:
         pod_manager.get_pod_id(alias)  # Validate alias exists
 
         full_command = " ".join(command)
+        if as_root:
+            ssh_command = f"bash -l -c {shlex.quote(full_command)}"
+        else:
+            ssh_command = f"sudo -u user bash -l -c {shlex.quote(full_command)}"
         console.print(f"Running on '[bold]{alias}[/bold]': {full_command}")
         subprocess.run(
-            ["ssh", "-A", alias, f"bash -l -c {shlex.quote(full_command)}"],
+            ["ssh", "-A", alias, ssh_command],
             check=False,
         )
 
