@@ -968,6 +968,62 @@ def shell_command(alias: str | None) -> None:
         handle_cli_error(e)
 
 
+def scp_command(args: list[str]) -> None:
+    """Copy files to/from a pod via SCP.
+
+    Accepts standard scp-style arguments.  Scans *args* for any token that
+    looks like ``alias:/path`` where *alias* is a tracked pod, validates it,
+    and passes everything through to ``scp``.
+
+    If no recognised alias is found in the arguments a pod can be selected
+    interactively: the chosen alias is prepended to the first bare remote
+    path (i.e. a path starting with ``/`` or ``~``).
+    """
+    try:
+        import subprocess
+
+        pod_manager = get_pod_manager()
+        all_aliases = set(pod_manager.aliases.keys())
+
+        # Try to find an alias:path token in the arguments
+        found_alias: str | None = None
+        for arg in args:
+            if ":" in arg:
+                maybe_alias = arg.split(":", 1)[0]
+                if maybe_alias in all_aliases:
+                    found_alias = maybe_alias
+                    break
+
+        if found_alias is None:
+            # No alias detected - let the user pick one interactively
+            found_alias = select_pod_if_needed(None, pod_manager)
+            # Prepend alias: to the first bare remote-looking path
+            rewritten = False
+            new_args: list[str] = []
+            for arg in args:
+                if not rewritten and not arg.startswith("-") and ":" not in arg:
+                    # Treat as the remote path
+                    new_args.append(f"{found_alias}:{arg}")
+                    rewritten = True
+                else:
+                    new_args.append(arg)
+            if not rewritten:
+                console.print(
+                    "❌ Could not determine remote path. Use alias:/path syntax.",
+                    style="red",
+                )
+                raise typer.Exit(1)
+            args = new_args
+
+        pod_manager.get_pod_id(found_alias)  # Validate alias exists
+
+        console.print(f"📦 scp {' '.join(args)}")
+        subprocess.run(["scp", "-r", *args], check=False)
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
 def run_command(
     alias: str | None, command: list[str], *, as_root: bool = False
 ) -> None:

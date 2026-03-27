@@ -121,6 +121,17 @@ Interactive SSH shell with agent forwarding.
 
 Open VS Code via remote SSH. Default path: `/workspace`.
 
+#### `rp scp <src> <dest>`
+
+Copy files to/from a pod via SCP. Uses standard scp syntax with pod aliases as hostnames. Automatically passes `-r` for recursive copying.
+
+```bash
+rp scp ./local_file my-pod:/workspace/
+rp scp my-pod:/workspace/results ./results
+```
+
+If no alias is detected in the arguments, an interactive pod selector is shown.
+
 ### Low-Level Commands (`rp pod`)
 
 All low-level pod management commands live under the `rp pod` subcommand.

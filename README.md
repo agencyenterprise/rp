@@ -52,6 +52,7 @@ rp down h100-1
 | `rp run <alias> -- <cmd>` | Execute command on pod via SSH |
 | `rp shell <alias>` | Interactive SSH shell |
 | `rp code <alias> [path]` | Open VS Code remote SSH |
+| `rp scp <src> <dest>` | Copy files to/from pod via SCP |
 
 ### Low-Level (`rp pod`)
 

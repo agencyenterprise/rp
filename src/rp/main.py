@@ -21,6 +21,7 @@ from rp.cli.commands import (
     list_command,
     logs_command,
     run_command,
+    scp_command,
     secrets_inject_command,
     secrets_list_command,
     secrets_remove_command,
@@ -179,6 +180,29 @@ def code(
 ):
     """Open VS Code editor with remote SSH connection to pod."""
     code_command(alias, path)
+
+
+@app.command(
+    "scp",
+    context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
+)
+def scp(ctx: typer.Context):
+    """Copy files to/from a pod via SCP.
+
+    Uses standard scp syntax with pod aliases in place of hostnames.
+
+    Examples:
+        rp scp ./local_file my-pod:/workspace/
+        rp scp my-pod:/workspace/results ./results
+        rp scp -P 2222 ./data my-pod:/workspace/data
+    """
+    args = [a for a in ctx.args if a != "--"]
+    if not args:
+        console.print(
+            "❌ No arguments specified. Usage: rp scp <src> <dest>", style="red"
+        )
+        raise typer.Exit(1)
+    scp_command(args)
 
 
 @app.command("claude")
