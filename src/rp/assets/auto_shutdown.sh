@@ -6,7 +6,6 @@
 set -euo pipefail
 
 IDLE_FILE="/tmp/gpu_idle_since"
-IDLE_THRESHOLD_MINUTES="${AUTO_SHUTDOWN_IDLE_MINUTES:-120}"
 LOG_PREFIX="[auto_shutdown]"
 
 # Source credentials for RunPod API access
@@ -16,6 +15,8 @@ else
     echo "$LOG_PREFIX No /root/.rp-env found, skipping."
     exit 0
 fi
+
+IDLE_THRESHOLD_MINUTES="${AUTO_SHUTDOWN_IDLE_MINUTES:-120}"
 
 if [ -z "${RUNPOD_API_KEY:-}" ] || [ -z "${RUNPOD_POD_ID:-}" ]; then
     echo "$LOG_PREFIX RUNPOD_API_KEY or RUNPOD_POD_ID not set, skipping."
