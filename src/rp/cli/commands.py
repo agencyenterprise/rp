@@ -995,25 +995,21 @@ def scp_command(args: list[str]) -> None:
                     break
 
         if found_alias is None:
-            # No alias detected - let the user pick one interactively
-            found_alias = select_pod_if_needed(None, pod_manager)
-            # Prepend alias: to the first bare remote-looking path
-            rewritten = False
-            new_args: list[str] = []
-            for arg in args:
-                if not rewritten and not arg.startswith("-") and ":" not in arg:
-                    # Treat as the remote path
-                    new_args.append(f"{found_alias}:{arg}")
-                    rewritten = True
-                else:
-                    new_args.append(arg)
-            if not rewritten:
-                console.print(
-                    "❌ Could not determine remote path. Use alias:/path syntax.",
-                    style="red",
+            positional = [a for a in args if not a.startswith("-")]
+            hint = ""
+            if len(positional) >= 3 and positional[0] in all_aliases:
+                # Looks like: rp scp <alias> <src> <dest>
+                hint = (
+                    f"\n💡 Did you mean: rp scp {positional[1]}"
+                    f" {positional[0]}:{positional[2]}"
                 )
-                raise typer.Exit(1)
-            args = new_args
+            console.print(
+                "❌ No pod alias found. Use alias:/path syntax, e.g.:\n"
+                "   rp scp ./local_file my-pod:/remote/path\n"
+                f"   rp scp my-pod:/remote/path ./local_file{hint}",
+                style="red",
+            )
+            raise SystemExit(1)
 
         pod_manager.get_pod_id(found_alias)  # Validate alias exists
 
