@@ -175,6 +175,10 @@ def test_something(cli_runner, shared_test_pod):
     result = cli_runner(["untrack", alias])
 ```
 
+## Versioning
+
+Every change must include a version bump in `pyproject.toml`. Use **minor** version bumps for new features or breaking changes, and **patch** bumps for bug fixes and small improvements. Commit the version bump together with (or as part of) the change — don't leave it for a separate follow-up.
+
 ## Important Constraints
 
 - **Python 3.13+** required (uses modern type syntax: `dict[str, str]`, `str | None`)
