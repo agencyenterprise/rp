@@ -46,6 +46,14 @@ def get_default_templates() -> dict[str, PodTemplate]:
             container_disk_spec=DEFAULT_CONTAINER_DISK,
             image=DEFAULT_IMAGE,
         ),
+        "4h100": PodTemplate(
+            identifier="4h100",
+            alias_template="{project}_{person}_{i}",
+            gpu_spec="4xh100",
+            storage_spec="0GB",
+            container_disk_spec=DEFAULT_CONTAINER_DISK,
+            image=DEFAULT_IMAGE,
+        ),
         "a40": PodTemplate(
             identifier="a40",
             alias_template="{project}_{person}_{i}",
