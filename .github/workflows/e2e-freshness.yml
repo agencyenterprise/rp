@@ -9,11 +9,16 @@ on:
     workflows: ["E2E tests"]
     types: [completed]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - name: Check last E2E pass age
+        id: freshness
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAX_AGE_DAYS: "60"
@@ -23,6 +28,7 @@ jobs:
           last_date=$(gh api "repos/${{ github.repository }}/branches/e2e-last-pass" --jq '.commit.commit.committer.date' 2>/dev/null || true)
 
           if [ -z "$last_date" ]; then
+            echo "reason=never" >> "$GITHUB_OUTPUT"
             echo "::error title=E2E has never passed::Branch 'e2e-last-pass' does not exist. Trigger the E2E workflow to record a successful run."
             exit 1
           fi
@@ -31,11 +37,62 @@ jobs:
           last_epoch=$(date -u -d "$last_date" +%s)
           age_days=$(( (now_epoch - last_epoch) / 86400 ))
 
+          echo "last_date=$last_date" >> "$GITHUB_OUTPUT"
+          echo "age_days=$age_days" >> "$GITHUB_OUTPUT"
           echo "Last E2E pass: $last_date ($age_days days ago, threshold ${MAX_AGE_DAYS}d)"
 
           if [ "$age_days" -gt "$MAX_AGE_DAYS" ]; then
+            echo "reason=stale" >> "$GITHUB_OUTPUT"
             echo "::error title=E2E suite is stale::Last successful E2E run was $age_days days ago (threshold ${MAX_AGE_DAYS}d). Trigger the E2E workflow before merging."
             exit 1
           fi
 
           echo "::notice title=E2E freshness OK::Last pass was $age_days days ago."
+
+      - name: Comment on PR explaining how to unblock
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REASON: ${{ steps.freshness.outputs.reason }}
+          LAST_DATE: ${{ steps.freshness.outputs.last_date }}
+          AGE_DAYS: ${{ steps.freshness.outputs.age_days }}
+        run: |
+          set -euo pipefail
+          MARKER="<!-- e2e-freshness-gate -->"
+
+          if [ "$REASON" = "never" ]; then
+            status="The **E2E suite has never been recorded as passing** — the \`e2e-last-pass\` branch doesn't exist yet."
+          else
+            status="The last successful E2E run was **${AGE_DAYS} days ago** (${LAST_DATE}), past the 60-day freshness threshold."
+          fi
+
+          body=$(cat <<EOF
+          $MARKER
+          ### 🚧 E2E freshness check failed
+
+          $status
+
+          **To unblock this PR:**
+
+          1. Trigger the E2E workflow against \`main\`:
+             \`\`\`
+             gh workflow run e2e.yml --ref main
+             \`\`\`
+             or run it from the [Actions tab](https://github.com/${{ github.repository }}/actions/workflows/e2e.yml).
+          2. Wait for it to go green — that pushes a new commit to the \`e2e-last-pass\` branch.
+          3. Push any commit to this PR branch (e.g. \`git commit --allow-empty -m "retrigger ci" && git push\`) so the freshness check re-runs on the PR.
+
+          See \`.github/workflows/e2e-freshness.yml\`.
+          EOF
+          )
+
+          existing=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -1 || true)
+
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$existing" -f body="$body" >/dev/null
+            echo "Updated existing freshness comment ($existing)."
+          else
+            gh pr comment "$PR_NUMBER" --body "$body"
+            echo "Posted new freshness comment."
+          fi

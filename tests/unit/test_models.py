@@ -4,6 +4,8 @@ Unit tests for Pydantic data models.
 These tests verify model validation, serialization, and business logic.
 """
 
+import re
+
 import pytest
 
 from rp.core.models import (
@@ -193,7 +195,8 @@ class TestPodTemplate:
     def test_missing_placeholder_validation(self):
         """Test validation fails when alias template is missing {i} placeholder."""
         with pytest.raises(
-            ValueError, match="Alias template must contain '{i}' placeholder"
+            ValueError,
+            match=re.escape("Alias template must contain '{i}' placeholder"),
         ):
             PodTemplate(
                 identifier="alex-ast",
@@ -375,7 +378,7 @@ class TestPodTemplateVariables:
             gpu_spec="h100",
             storage_spec="500GB",
         )
-        with pytest.raises(ValueError, match="requires variables.*person"):
+        with pytest.raises(ValueError, match=r"requires variables.*person"):
             template.resolve_alias_template({"project": "ast"})
 
 

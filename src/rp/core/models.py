@@ -7,12 +7,12 @@ providing type safety, validation, and serialization capabilities.
 
 import re
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
 
-class PodStatus(str, Enum):
+class PodStatus(StrEnum):
     """Enumeration of possible pod statuses."""
 
     RUNNING = "running"
