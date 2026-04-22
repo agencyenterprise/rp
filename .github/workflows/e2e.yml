@@ -1,0 +1,40 @@
+name: E2E tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+
+      - name: Sync dependencies
+        run: uv sync --all-extras
+
+      - name: Run E2E tests
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: uv run pytest tests/e2e/ -v
+
+      - name: Record successful run
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          git checkout --orphan e2e-last-pass
+          git rm -rf . >/dev/null 2>&1 || true
+          printf '%s\n' "$TS" > TIMESTAMP
+          git add TIMESTAMP
+          git commit -m "E2E pass $TS"
+          git push --force origin e2e-last-pass
