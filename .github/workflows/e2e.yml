@@ -21,6 +21,21 @@ jobs:
       - name: Sync dependencies
         run: uv sync --all-extras
 
+      - name: Configure SSH for pod access
+        env:
+          CI_SSH_PRIVATE_KEY: ${{ secrets.CI_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -n "${CI_SSH_PRIVATE_KEY:-}" ]; then
+            mkdir -p ~/.ssh
+            chmod 700 ~/.ssh
+            printf '%s\n' "$CI_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+            echo "RP_E2E_SSH_AVAILABLE=1" >> "$GITHUB_ENV"
+            echo "SSH key installed from CI_SSH_PRIVATE_KEY."
+          else
+            echo "CI_SSH_PRIVATE_KEY not set — tests requiring SSH to pods will be skipped."
+          fi
+
       - name: Run E2E tests
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
