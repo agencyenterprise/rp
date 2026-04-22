@@ -28,7 +28,7 @@ def setup_runpod_api():
 
     if not api_key:
         msg = "RUNPOD_API_KEY not found. Set env var or store in ~/.config/rp/runpod_api_key"
-        pytest.skip(msg)  # type: ignore[too-many-positional-arguments, invalid-argument-type]
+        pytest.skip(msg)  # ty: ignore[too-many-positional-arguments]
 
     runpod.api_key = api_key
     return api_key
@@ -41,11 +41,16 @@ def temp_config_dir():
         original_config_dir = CONFIG_DIR
         # Patch the config module to use temp directory
         from rp import config
+        from rp.cli import utils as cli_utils
 
         config.CONFIG_DIR = Path(temp_dir) / "rp"
         config.POD_CONFIG_FILE = config.CONFIG_DIR / "pods.json"
         config.API_KEY_FILE = config.CONFIG_DIR / "runpod_api_key"
         config.SETUP_FILE = config.CONFIG_DIR / "setup.sh"
+        # Modules that did `from rp.config import SETUP_FILE` bound the
+        # original path at import time; redirect their references too.
+        cli_utils.SETUP_FILE = config.SETUP_FILE
+        cli_utils.API_KEY_FILE = config.API_KEY_FILE
 
         ensure_config_dir_exists()
 
@@ -61,6 +66,8 @@ def temp_config_dir():
         config.POD_CONFIG_FILE = original_config_dir / "pods.json"
         config.API_KEY_FILE = original_config_dir / "runpod_api_key"
         config.SETUP_FILE = original_config_dir / "setup.sh"
+        cli_utils.SETUP_FILE = config.SETUP_FILE
+        cli_utils.API_KEY_FILE = config.API_KEY_FILE
 
 
 @pytest.fixture
