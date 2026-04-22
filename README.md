@@ -1,6 +1,7 @@
 # rp — RunPod CLI
 
 [![Unit tests](https://github.com/agencyenterprise/rp/actions/workflows/unit.yml/badge.svg)](https://github.com/agencyenterprise/rp/actions/workflows/unit.yml)
+[![E2E tests](https://github.com/agencyenterprise/rp/actions/workflows/e2e.yml/badge.svg?branch=main)](https://github.com/agencyenterprise/rp/actions/workflows/e2e.yml)
 [![Last E2E pass](https://img.shields.io/github/last-commit/agencyenterprise/rp/e2e-last-pass?label=last%20e2e%20pass)](https://github.com/agencyenterprise/rp/actions/workflows/e2e.yml)
 
 A CLI for managing RunPod GPU pods. Two tiers: **low-level** (`rp pod create`) for bare pods, and **opinionated** (`rp up`) for fully configured pods with tools, secrets, auto-shutdown, and remote Claude support.
