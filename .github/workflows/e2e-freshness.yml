@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: "0 9 * * *"
   workflow_dispatch:
+  workflow_run:
+    workflows: ["E2E tests"]
+    types: [completed]
 
 jobs:
   check:
