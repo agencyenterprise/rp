@@ -27,7 +27,17 @@ def _create_pod_with_fallback(cli_runner, alias: str, storage: str = "10GB"):
     last_result = None
     for gpu in CHEAP_GPUS:
         result = cli_runner(
-            ["pod", "create", "--alias", alias, "--gpu", gpu, "--storage", storage]
+            [
+                "pod",
+                "create",
+                "--alias",
+                alias,
+                "--gpu",
+                gpu,
+                "--storage",
+                storage,
+                "--no-setup",
+            ]
         )
         last_result = result
         if result.returncode == 0:
@@ -78,7 +88,7 @@ class TestPodLifecycle:
         assert "stopped" in result.stdout.lower()
 
         # 4. Start the pod again
-        result = cli_runner(["pod", "start", alias])
+        result = cli_runner(["pod", "start", alias, "--no-setup"])
         # Start may fail due to setup scripts on bare pods, but the pod
         # itself should transition to RUNNING.
         assert "RUNNING" in result.stdout or result.returncode == 0
@@ -139,7 +149,7 @@ class TestPodLifecycle:
         assert result.returncode == 0, f"Track failed: {result.stderr}"
 
         # Start the pod (idempotent when already running) to guarantee SSH is up
-        cli_runner(["pod", "start", alias])
+        cli_runner(["pod", "start", alias, "--no-setup"])
 
         # Give SSH some time to be ready
         time.sleep(10)

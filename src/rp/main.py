@@ -271,6 +271,11 @@ def create(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show actions without creating"
     ),
+    no_setup: bool = typer.Option(
+        False,
+        "--no-setup",
+        help="Skip running the setup script on the pod (useful in CI without SSH keys)",
+    ),
 ):
     """Create a bare pod (no managed setup). Use 'rp up' for full setup."""
     create_command(
@@ -283,6 +288,7 @@ def create(
         force,
         dry_run,
         network_volume,
+        no_setup,
     )
 
 
@@ -293,9 +299,14 @@ def start(
         help="SSH host alias for the pod (e.g., runpod-1, local-saes-1)",
         autocompletion=complete_alias,
     ),
+    no_setup: bool = typer.Option(
+        False,
+        "--no-setup",
+        help="Skip re-running the setup script after the pod starts (useful in CI without SSH keys)",
+    ),
 ):
     """Start/resume a stopped pod."""
-    start_command(host_alias)
+    start_command(host_alias, no_setup=no_setup)
 
 
 @pod_app.command()

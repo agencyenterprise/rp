@@ -113,6 +113,7 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
     force: bool = False,
     dry_run: bool = False,
     network_volume: str | None = None,
+    no_setup: bool = False,
 ) -> None:
     """Create a new RunPod using PyTorch 2.8 image."""
     try:
@@ -257,8 +258,10 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
             ssh_manager.update_host_config(ssh_config)
             console.print("✅ SSH config updated successfully.")
 
-        # Run setup scripts
-        run_setup_scripts(final_alias)
+        # Run setup scripts (unless the caller opted out, e.g., in CI
+        # where the runner has no SSH key registered on the pod)
+        if not no_setup:
+            run_setup_scripts(final_alias)
 
         # Print summary
         if template_used:
@@ -396,7 +399,7 @@ def up_command(
         handle_cli_error(e)
 
 
-def start_command(alias: str | None) -> None:
+def start_command(alias: str | None, no_setup: bool = False) -> None:
     """Start/resume a RunPod instance."""
     try:
         pod_manager = get_pod_manager()
@@ -434,7 +437,9 @@ def start_command(alias: str | None) -> None:
 
         # Check if this is a managed pod — re-inject secrets and auto-shutdown
         metadata = pod_manager.config.pod_metadata.get(alias)
-        if metadata and metadata.managed:
+        if no_setup:
+            pass
+        elif metadata and metadata.managed:
             from rp.core.pod_setup import PodSetup
 
             console.print("⚙️  Re-running managed setup…")
