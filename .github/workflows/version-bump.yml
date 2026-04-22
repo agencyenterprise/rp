@@ -3,6 +3,9 @@ name: Version bump
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   version-bump:
     runs-on: ubuntu-latest
