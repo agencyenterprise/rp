@@ -15,7 +15,7 @@ jobs:
         id: scope
         run: |
           base="${{ github.base_ref }}"
-          git fetch --no-tags --depth=0 origin "$base"
+          git fetch --no-tags origin "$base"
           changed=$(git diff --name-only "origin/$base"...HEAD)
           echo "Changed files:"
           echo "$changed"
