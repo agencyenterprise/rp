@@ -1,6 +1,6 @@
 [project]
 name = "rp"
-version = "0.8.3"
+version = "0.8.4"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -72,6 +72,9 @@ skips = ["B101", "B601"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"rp.assets" = ["*.sh"]
 
 [dependency-groups]
 dev = [

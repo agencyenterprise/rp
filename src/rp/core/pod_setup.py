@@ -177,10 +177,11 @@ fi
         )
         with importlib.resources.as_file(auto_shutdown_ref) as auto_shutdown_path:
             if not auto_shutdown_path.exists():
-                self.console.print(
-                    "    [yellow]Warning: auto_shutdown.sh not found, skipping.[/yellow]"
+                raise FileNotFoundError(
+                    f"auto_shutdown.sh missing from installed rp package at "
+                    f"{auto_shutdown_path}. The package data is not being shipped — "
+                    "reinstall rp (e.g. `uv tool install --reinstall rp`)."
                 )
-                return
             self._scp_to_pod(str(auto_shutdown_path), "/usr/local/bin/auto_shutdown.sh")
         self._ssh_run_script(f"""
 chmod +x /usr/local/bin/auto_shutdown.sh
