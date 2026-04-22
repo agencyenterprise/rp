@@ -1,0 +1,38 @@
+name: E2E freshness
+
+on:
+  pull_request:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check last E2E pass age
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAX_AGE_DAYS: "60"
+        run: |
+          set -euo pipefail
+
+          last_date=$(gh api "repos/${{ github.repository }}/branches/e2e-last-pass" --jq '.commit.commit.committer.date' 2>/dev/null || true)
+
+          if [ -z "$last_date" ]; then
+            echo "::error title=E2E has never passed::Branch 'e2e-last-pass' does not exist. Trigger the E2E workflow to record a successful run."
+            exit 1
+          fi
+
+          now_epoch=$(date -u +%s)
+          last_epoch=$(date -u -d "$last_date" +%s)
+          age_days=$(( (now_epoch - last_epoch) / 86400 ))
+
+          echo "Last E2E pass: $last_date ($age_days days ago, threshold ${MAX_AGE_DAYS}d)"
+
+          if [ "$age_days" -gt "$MAX_AGE_DAYS" ]; then
+            echo "::error title=E2E suite is stale::Last successful E2E run was $age_days days ago (threshold ${MAX_AGE_DAYS}d). Trigger the E2E workflow before merging."
+            exit 1
+          fi
+
+          echo "::notice title=E2E freshness OK::Last pass was $age_days days ago."
