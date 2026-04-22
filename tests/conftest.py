@@ -70,9 +70,13 @@ def temp_config_dir():
         cli_utils.API_KEY_FILE = config.API_KEY_FILE
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def cli_runner():
-    """Provide a CLI test runner."""
+    """Provide a CLI test runner.
+
+    Session-scoped because the returned callable holds no per-test state,
+    and module-scoped fixtures (e.g. `managed_pod`) need to depend on it.
+    """
 
     def run_command(
         cmd_args: list[str], input_text: str | None = None, env: dict | None = None
