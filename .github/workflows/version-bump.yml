@@ -11,27 +11,29 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Determine if PR is docs-only
+      - name: Determine if PR requires a version bump
         id: scope
         run: |
+          set -euo pipefail
           base="${{ github.base_ref }}"
           git fetch --no-tags origin "$base"
           changed=$(git diff --name-only "origin/$base"...HEAD)
           echo "Changed files:"
           echo "$changed"
-          non_docs=$(echo "$changed" | grep -vE '^(docs/|.*\.md$)' || true)
-          if [ -z "$non_docs" ]; then
-            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          needs_bump=$(echo "$changed" | grep -vE '^(docs/|tests/|\.github/|.*\.md$)' || true)
+          if [ -z "$needs_bump" ]; then
+            echo "skip_bump=true" >> "$GITHUB_OUTPUT"
           else
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "skip_bump=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check pyproject.toml version was bumped
-        if: steps.scope.outputs.docs_only == 'false'
+        if: steps.scope.outputs.skip_bump == 'false'
         run: |
+          set -euo pipefail
           base="${{ github.base_ref }}"
-          base_ver=$(git show "origin/$base:pyproject.toml" | grep -E '^version = ' | head -1 | sed -E 's/version = "([^"]+)"/\1/')
-          head_ver=$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/version = "([^"]+)"/\1/')
+          base_ver=$(git show "origin/$base:pyproject.toml" | python3 -c 'import sys, tomllib; print(tomllib.loads(sys.stdin.read())["project"]["version"])')
+          head_ver=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           echo "Base version: $base_ver"
           echo "HEAD version: $head_ver"
           if [ "$base_ver" = "$head_ver" ]; then
@@ -40,5 +42,5 @@ jobs:
           fi
 
       - name: Skip reason
-        if: steps.scope.outputs.docs_only == 'true'
-        run: echo "::notice::PR touches only docs/ and/or *.md — version bump not required."
+        if: steps.scope.outputs.skip_bump == 'true'
+        run: echo "::notice::PR touches only docs/, tests/, .github/, and/or *.md — version bump not required."
