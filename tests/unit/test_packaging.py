@@ -43,6 +43,6 @@ def test_asset_shipped_in_wheel(built_wheel: zipfile.ZipFile, asset: str) -> Non
     disabled `rp up`'s auto-shutdown cron — the code warned and returned
     instead of raising, so every managed pod ran without auto-shutdown.
     """
-    assert (
-        asset in built_wheel.namelist()
-    ), f"{asset} missing from wheel. Files present: {built_wheel.namelist()}"
+    assert asset in built_wheel.namelist(), (
+        f"{asset} missing from wheel. Files present: {built_wheel.namelist()}"
+    )
