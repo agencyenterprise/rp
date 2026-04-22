@@ -8,6 +8,7 @@ including error handling, API setup, and output formatting.
 import getpass
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -278,32 +279,44 @@ def ensure_setup_script_exists() -> None:
     if SETUP_FILE.exists():
         return
 
-    # Prompt for git configuration
-    console.print("🔧 First time setup - configuring your git identity")
-    console.print("   (This will be used in the setup script for all pods)")
+    # Non-interactive environments (CI, scripts) can't answer a prompt —
+    # fall back to env vars or conservative defaults so `rp pod create`
+    # doesn't deadlock on first run.
+    if not sys.stdin.isatty():
+        git_name = os.environ.get("GIT_AUTHOR_NAME", "rp user")
+        git_email = os.environ.get("GIT_AUTHOR_EMAIL", "rp-user@example.com")
+        console.print(
+            f"🔧 First-time setup (non-interactive): using "
+            f"git identity '{git_name} <{git_email}>'. "
+            f"Edit {SETUP_FILE} to change."
+        )
+    else:
+        # Prompt for git configuration
+        console.print("🔧 First time setup - configuring your git identity")
+        console.print("   (This will be used in the setup script for all pods)")
 
-    try:
-        git_name = questionary.text(
-            "Enter your name for git commits:",
-            default=os.environ.get("GIT_AUTHOR_NAME", "Your Name"),
-        ).ask()
+        try:
+            git_name = questionary.text(
+                "Enter your name for git commits:",
+                default=os.environ.get("GIT_AUTHOR_NAME", "Your Name"),
+            ).ask()
 
-        if not git_name:
-            console.print("❌ Name is required", style="red")
-            raise typer.Exit(1)
+            if not git_name:
+                console.print("❌ Name is required", style="red")
+                raise typer.Exit(1)
 
-        git_email = questionary.text(
-            "Enter your email for git commits:",
-            default=os.environ.get("GIT_AUTHOR_EMAIL", "your.email@example.com"),
-        ).ask()
+            git_email = questionary.text(
+                "Enter your email for git commits:",
+                default=os.environ.get("GIT_AUTHOR_EMAIL", "your.email@example.com"),
+            ).ask()
 
-        if not git_email:
-            console.print("❌ Email is required", style="red")
-            raise typer.Exit(1)
+            if not git_email:
+                console.print("❌ Email is required", style="red")
+                raise typer.Exit(1)
 
-    except (EOFError, KeyboardInterrupt):
-        console.print("\n❌ Setup cancelled.", style="red")
-        raise typer.Exit(1) from None
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n❌ Setup cancelled.", style="red")
+            raise typer.Exit(1) from None
 
     # Load default setup script from package data
     import importlib.resources
