@@ -111,41 +111,68 @@ class TestPodManager:
         self.created_pods: list[str] = []
         self.test_aliases: list[str] = []
 
-    def create_test_pod(self, alias: str) -> dict:
-        """Create a minimal test pod and track it for cleanup."""
-        # Use cheapest available GPU for testing
-        # First try to get available GPU types to find a cheaper option
+    # Substrings of displayName for cheap/usually-available GPUs, in order
+    # of preference. Whatever's listed by the API and matches gets tried.
+    CHEAP_GPU_PATTERNS: tuple[str, ...] = (
+        "A4000",
+        "3090",
+        "A5000",
+        "4090",
+        "5090",
+    )
+
+    def _candidate_gpu_ids(self) -> list[str]:
         try:
             gpus = runpod.get_gpus()
             if isinstance(gpus, dict) and "gpus" in gpus:
                 gpus = gpus["gpus"]
-            # Look for RTX 4000 or A4000 (typically cheaper options)
-            gpu_id = "NVIDIA RTX A4000"
-            for gpu in gpus:
-                gpu_name = str(gpu.get("displayName", "")).upper()
-                if "RTX 4000" in gpu_name or "A4000" in gpu_name:
-                    gpu_id = gpu["id"]
-                    break
         except Exception:
-            gpu_id = "NVIDIA RTX A4000"  # fallback
+            gpus = []
 
-        created = runpod.create_pod(
-            name=f"test-{alias}",
-            image_name="runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04",
-            gpu_type_id=gpu_id,
-            gpu_count=1,
-            volume_in_gb=10,  # Minimal storage
-            volume_mount_path="/workspace",
-            support_public_ip=True,
-            start_ssh=True,
-            ports="22/tcp",
+        by_name = {str(g.get("displayName", "")).upper(): g.get("id") for g in gpus}
+        ids: list[str] = []
+        for pattern in self.CHEAP_GPU_PATTERNS:
+            for name, gid in by_name.items():
+                if pattern in name and gid not in ids:
+                    ids.append(gid)
+        # Fallback to a known-good ID if API returned nothing.
+        return ids or ["NVIDIA RTX A4000"]
+
+    def create_test_pod(self, alias: str) -> dict:
+        """Create a minimal test pod and track it for cleanup.
+
+        Tries several cheap GPU types in order — RunPod availability
+        fluctuates, so a single hardcoded choice flakes too often.
+        """
+        last_err: Exception | None = None
+        for gpu_id in self._candidate_gpu_ids():
+            try:
+                created = runpod.create_pod(
+                    name=f"test-{alias}",
+                    image_name="runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04",
+                    gpu_type_id=gpu_id,
+                    gpu_count=1,
+                    volume_in_gb=10,
+                    volume_mount_path="/workspace",
+                    support_public_ip=True,
+                    start_ssh=True,
+                    ports="22/tcp",
+                )
+            except Exception as e:
+                last_err = e
+                continue
+
+            if isinstance(created, dict) and created.get("id"):
+                self.created_pods.append(created["id"])
+                self.test_aliases.append(alias)
+                return created
+            # Some SDK responses signal unavailability by returning a dict
+            # with no id / an error field. Try the next GPU.
+            last_err = RuntimeError(f"create_pod returned {created!r}")
+
+        raise RuntimeError(
+            f"Failed to create test pod across {self.CHEAP_GPU_PATTERNS}: {last_err}"
         )
-
-        if isinstance(created, dict) and created.get("id"):
-            self.created_pods.append(created["id"])
-            self.test_aliases.append(alias)
-
-        return created
 
     def wait_for_pod_ready(self, pod_id: str, timeout: int = 300) -> dict:
         """Wait for pod to be ready with network info."""

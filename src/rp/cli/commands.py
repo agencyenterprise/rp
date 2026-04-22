@@ -519,6 +519,10 @@ def destroy_command(alias: str | None, force: bool = False) -> None:
     try:
         pod_manager = get_pod_manager()
         alias = select_pod_if_needed(alias, pod_manager)
+        # Validate the alias exists before prompting so an unknown-alias
+        # mistake surfaces as "Unknown host alias" instead of a generic
+        # error after the destructive y/N prompt.
+        pod_manager.get_pod_id(alias)
 
         # Confirm destruction unless force is set
         if not force:
