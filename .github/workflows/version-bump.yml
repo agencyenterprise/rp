@@ -1,0 +1,44 @@
+name: Version bump
+
+on:
+  pull_request:
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine if PR is docs-only
+        id: scope
+        run: |
+          base="${{ github.base_ref }}"
+          git fetch --no-tags --depth=0 origin "$base"
+          changed=$(git diff --name-only "origin/$base"...HEAD)
+          echo "Changed files:"
+          echo "$changed"
+          non_docs=$(echo "$changed" | grep -vE '^(docs/|.*\.md$)' || true)
+          if [ -z "$non_docs" ]; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check pyproject.toml version was bumped
+        if: steps.scope.outputs.docs_only == 'false'
+        run: |
+          base="${{ github.base_ref }}"
+          base_ver=$(git show "origin/$base:pyproject.toml" | grep -E '^version = ' | head -1 | sed -E 's/version = "([^"]+)"/\1/')
+          head_ver=$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/version = "([^"]+)"/\1/')
+          echo "Base version: $base_ver"
+          echo "HEAD version: $head_ver"
+          if [ "$base_ver" = "$head_ver" ]; then
+            echo "::error title=Version not bumped::pyproject.toml version is still $head_ver on this PR. Bump it (patch for fixes, minor for features) — see CLAUDE.md."
+            exit 1
+          fi
+
+      - name: Skip reason
+        if: steps.scope.outputs.docs_only == 'true'
+        run: echo "::notice::PR touches only docs/ and/or *.md — version bump not required."
