@@ -16,7 +16,7 @@ class TestPodLifecycle:
         """Test the full pod lifecycle using CLI commands."""
         import uuid
 
-        alias = f"e2e-lifecycle-{uuid.uuid4().hex[:8]}"
+        alias = f"test-e2e-lifecycle-{uuid.uuid4().hex[:8]}"
 
         # 1. Create a pod
         result = cli_runner(

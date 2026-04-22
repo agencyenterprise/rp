@@ -26,6 +26,12 @@ jobs:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
         run: uv run pytest tests/e2e/ -v
 
+      - name: Sweep leaked test pods
+        if: always()
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: uv run python scripts/sweep_test_pods.py
+
       - name: Record successful run
         if: success()
         run: |
