@@ -13,7 +13,6 @@ is configured and the e2e workflow installs it into the runner.
 from __future__ import annotations
 
 import os
-import subprocess
 import uuid
 
 import pytest
@@ -69,27 +68,27 @@ def managed_pod(cli_runner):
 class TestManagedPodFlow:
     """Exercise the opinionated `rp up` path end to end."""
 
-    def test_auto_shutdown_installed(self, managed_pod):
+    def test_auto_shutdown_installed(self, cli_runner, managed_pod):
         """`rp up` must install the auto-shutdown script and cron on the pod.
 
         Regression guard for the packaging bug where auto_shutdown.sh was
         silently missing from the installed wheel — `rp up` reported
         success but the pod had no auto-shutdown, leaking compute.
+
+        Checks run via `rp run --root` so auth uses the same SSH path as
+        the tool itself (agent forwarding, SSH config) rather than a raw
+        ssh invocation that can auth-fail in CI even when `rp run` works.
         """
-        result = subprocess.run(
+        result = cli_runner(
             [
-                "ssh",
-                "-o",
-                "StrictHostKeyChecking=no",
-                "-o",
-                "ConnectTimeout=15",
+                "run",
+                "--root",
                 managed_pod,
+                "--",
+                "sh",
+                "-c",
                 "test -x /usr/local/bin/auto_shutdown.sh && crontab -l | grep -q auto_shutdown.sh && echo OK",
             ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
         )
         assert result.returncode == 0 and "OK" in result.stdout, (
             f"Auto-shutdown setup missing on pod. stdout={result.stdout!r} stderr={result.stderr!r}"
