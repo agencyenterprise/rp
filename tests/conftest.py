@@ -79,7 +79,10 @@ def cli_runner():
     """
 
     def run_command(
-        cmd_args: list[str], input_text: str | None = None, env: dict | None = None
+        cmd_args: list[str],
+        input_text: str | None = None,
+        env: dict | None = None,
+        timeout: int = 300,
     ) -> subprocess.CompletedProcess:
         """Run the rp command with given arguments."""
         full_env = os.environ.copy()
@@ -93,7 +96,7 @@ def cli_runner():
             text=True,
             capture_output=True,
             env=full_env,
-            timeout=300,
+            timeout=timeout,
         )
         return result
 

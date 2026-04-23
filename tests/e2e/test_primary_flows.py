@@ -39,7 +39,13 @@ def managed_pod(cli_runner):
     alias = f"test-e2e-managed-{uuid.uuid4().hex[:8]}"
     last_result = None
     for gpu in CHEAP_GPUS:
-        result = cli_runner(["up", "--gpu", gpu, "--storage", "0GB", "--alias", alias])
+        # `rp up` provisions a pod, installs tools, injects secrets, and
+        # deploys auto-shutdown — comfortably over the default 5-minute
+        # subprocess timeout on slower CI runners.
+        result = cli_runner(
+            ["up", "--gpu", gpu, "--storage", "0GB", "--alias", alias],
+            timeout=600,
+        )
         last_result = result
         if result.returncode == 0:
             break
