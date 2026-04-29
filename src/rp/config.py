@@ -22,6 +22,12 @@ SSH_CONFIG_FILE = Path.home() / ".ssh" / "config"
 # Marker prefix for SSH config
 MARKER_PREFIX = "# rp:managed"
 
+# Path to the RunPod SSH key created by `runpodctl`. Pods auto-inject all
+# account-level public keys at boot, so this private key works against any pod
+# the user creates. Pinning it via IdentitiesOnly avoids OpenSSH burning
+# MaxAuthTries on Touch-ID-gated agent keys before reaching it.
+RUNPOD_SSH_KEY_FILE = Path.home() / ".runpod" / "ssh" / "RunPod-Key-Go"
+
 # --- END CONFIGURATION ---
 
 

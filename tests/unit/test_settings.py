@@ -138,6 +138,46 @@ class TestResolveSettings:
         assert vars == {"person": "alex"}
         assert "project" not in vars
 
+    def test_aws_profile_single_file(self, tmp_path):
+        (tmp_path / ".rp_settings.json").write_text(
+            json.dumps({"aws_profile": "amaranth-mfa"})
+        )
+        resolved = resolve_settings(tmp_path)
+        assert resolved.aws_profile == "amaranth-mfa"
+
+    def test_aws_profile_default_none(self, tmp_path):
+        (tmp_path / ".rp_settings.json").write_text(json.dumps({"person": "alex"}))
+        resolved = resolve_settings(tmp_path)
+        assert resolved.aws_profile is None
+
+    def test_aws_profile_closest_wins(self, tmp_path):
+        parent = tmp_path / "parent"
+        child = parent / "child"
+        child.mkdir(parents=True)
+
+        (parent / ".rp_settings.json").write_text(
+            json.dumps({"aws_profile": "default"})
+        )
+        (child / ".rp_settings.json").write_text(
+            json.dumps({"aws_profile": "amaranth-mfa"})
+        )
+
+        resolved = resolve_settings(child)
+        assert resolved.aws_profile == "amaranth-mfa"
+
+    def test_aws_profile_inherited_from_parent(self, tmp_path):
+        parent = tmp_path / "parent"
+        child = parent / "child"
+        child.mkdir(parents=True)
+
+        (parent / ".rp_settings.json").write_text(
+            json.dumps({"aws_profile": "amaranth-mfa"})
+        )
+        (child / ".rp_settings.json").write_text(json.dumps({"project": "ast"}))
+
+        resolved = resolve_settings(child)
+        assert resolved.aws_profile == "amaranth-mfa"
+
 
 class TestFindNearestSettingsFile:
     def test_finds_in_current(self, tmp_path):

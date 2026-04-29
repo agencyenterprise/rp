@@ -219,6 +219,7 @@ Settings are defined in `.rp_settings.json` files at any directory level. Resolu
 {
   "person": "alex",
   "project": "ast",
+  "aws_profile": "amaranth-mfa",
   "secrets": ["HF_TOKEN", "WANDB_API_KEY"]
 }
 ```
@@ -228,6 +229,8 @@ All fields are optional. Place a file in `~` for global defaults, in a repo root
 **Template variables**: `person` and `project` feed into alias templates (e.g., `{project}_{person}_{i}` → `ast_alex_1`). `RP_`-prefixed environment variables still override settings values.
 
 **Secrets**: The `secrets` list names env vars whose values are stored in macOS Keychain. A project-level `.rp_settings.json` can override a global secret (e.g., a project-specific `HF_TOKEN`).
+
+**AWS profile**: `aws_profile` pins which AWS named profile is used when injecting AWS credentials into managed pods. Without it, `aws configure export-credentials` falls back to the shell's default profile, which may not match the project's AWS account. Setting this in a project-level `.rp_settings.json` keeps the right account's creds going to the pod regardless of the shell's `AWS_PROFILE`.
 
 ### Legacy Configuration
 
