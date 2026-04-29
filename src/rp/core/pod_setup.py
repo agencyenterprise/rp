@@ -5,6 +5,7 @@ creating a non-root user, injecting secrets, and deploying auto-shutdown.
 """
 
 import importlib.resources
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -86,8 +87,15 @@ class PodSetup:
         if oauth_token:
             lines.append(f"export CLAUDE_CODE_OAUTH_TOKEN={oauth_token}")
 
-        # AWS credentials (from aws CLI)
-        aws_creds = _get_aws_credentials()
+        # AWS credentials (from aws CLI). Use the profile pinned in
+        # .rp_settings.json when present so we don't silently inject the
+        # shell's default-profile creds into a project that expects another
+        # account.
+        aws_creds = _get_aws_credentials(profile=resolved.aws_profile)
+        if aws_creds and resolved.aws_profile:
+            self.console.print(
+                f"      AWS profile: [cyan]{resolved.aws_profile}[/cyan]"
+            )
         for key, value in aws_creds.items():
             lines.append(f"export {key}={value}")
 
@@ -328,14 +336,24 @@ def _get_claude_oauth_token() -> str | None:
         return None
 
 
-def _get_aws_credentials() -> dict[str, str]:
-    """Get AWS credentials from aws CLI."""
+def _get_aws_credentials(profile: str | None = None) -> dict[str, str]:
+    """Get AWS credentials from aws CLI.
+
+    When *profile* is provided, AWS_PROFILE is set in the subprocess env so
+    `aws configure export-credentials` returns creds for that named profile
+    instead of falling back to the shell's default. Avoids silently injecting
+    the wrong account into managed pods.
+    """
+    env = os.environ.copy()
+    if profile:
+        env["AWS_PROFILE"] = profile
     try:
         result = subprocess.run(
             ["aws", "configure", "export-credentials", "--format", "env-no-export"],
             capture_output=True,
             text=True,
             check=True,
+            env=env,
         )
         creds: dict[str, str] = {}
         for line in result.stdout.strip().split("\n"):

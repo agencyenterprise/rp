@@ -25,6 +25,14 @@ class RpSettings(BaseModel):
     secrets: list[str] = Field(
         default_factory=list, description="Secret env var names managed at this level"
     )
+    aws_profile: str | None = Field(
+        default=None,
+        description=(
+            "AWS named profile to export credentials from when injecting AWS_* "
+            "vars into managed pods. Pins the project to a specific account so "
+            "rp doesn't silently fall back to the shell's default profile."
+        ),
+    )
 
 
 class ResolvedSecret:
@@ -53,11 +61,13 @@ class ResolvedSettings:
         project: str | None,
         secrets: list[ResolvedSecret],
         sources: list[Path],
+        aws_profile: str | None = None,
     ):
         self.person = person
         self.project = project
         self.secrets = secrets
         self.sources = sources  # settings files found, closest first
+        self.aws_profile = aws_profile
 
     def template_vars(self) -> dict[str, str]:
         """Return template variables for pod alias resolution."""
@@ -110,6 +120,7 @@ def resolve_settings(start: Path | None = None) -> ResolvedSettings:
 
     person: str | None = None
     project: str | None = None
+    aws_profile: str | None = None
     # Track secrets: name → ResolvedSecret (first/closest wins)
     seen_secrets: dict[str, ResolvedSecret] = {}
     sources: list[Path] = []
@@ -127,6 +138,8 @@ def resolve_settings(start: Path | None = None) -> ResolvedSettings:
             person = settings.person
         if project is None and settings.project is not None:
             project = settings.project
+        if aws_profile is None and settings.aws_profile is not None:
+            aws_profile = settings.aws_profile
 
         # Closest wins for same-named secrets
         for secret_name in settings.secrets:
@@ -141,6 +154,7 @@ def resolve_settings(start: Path | None = None) -> ResolvedSettings:
         project=project,
         secrets=secrets,
         sources=sources,
+        aws_profile=aws_profile,
     )
 
 
