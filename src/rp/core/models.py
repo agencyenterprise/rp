@@ -11,6 +11,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
+from rp.config import RUNPOD_SSH_KEY_FILE
+
 
 class PodStatus(StrEnum):
     """Enumeration of possible pod statuses."""
@@ -142,7 +144,15 @@ class SSHConfig(BaseModel):
     hostname: str = Field(description="SSH hostname/IP")
     port: int = Field(ge=1, le=65535, description="SSH port")
     user: str = Field(default="root", description="SSH username")
-    identity_file: str | None = Field(default=None, description="SSH key file path")
+    # Default to the runpodctl-managed key. Pods auto-inject all account-level
+    # public keys at boot, so this private key works against every pod the
+    # user creates. Pinning it via IdentitiesOnly keeps OpenSSH from offering
+    # unrelated agent keys (e.g. Touch-ID-gated work keys) and tripping
+    # MaxAuthTries before the right key is tried.
+    identity_file: str | None = Field(
+        default_factory=lambda: str(RUNPOD_SSH_KEY_FILE),
+        description="SSH key file path (None disables IdentityFile in the block)",
+    )
 
     def to_ssh_block(self, updated_timestamp: str) -> list[str]:
         """Generate SSH config block lines."""

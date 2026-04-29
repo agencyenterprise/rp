@@ -127,6 +127,36 @@ class TestSSHConfig:
         assert "pod_id=pod123" in block_text
         assert "2022-01-20T12:00:00Z" in block_text
 
+    def test_default_identity_file_is_runpod_key(self):
+        """SSHConfig defaults to the runpodctl-managed key so OpenSSH
+        doesn't burn MaxAuthTries on unrelated agent keys (e.g. Touch-ID-
+        gated work keys) before reaching the right one."""
+        config = SSHConfig(
+            alias="test-pod", pod_id="pod123", hostname="1.2.3.4", port=12345
+        )
+        assert config.identity_file is not None
+        assert config.identity_file.endswith("/.runpod/ssh/RunPod-Key-Go")
+
+        block_text = "".join(config.to_ssh_block("2022-01-20T12:00:00Z"))
+        assert "    IdentitiesOnly yes\n" in block_text
+        assert "    IdentityFile " in block_text
+
+    def test_explicit_identity_file_none_omits_block_lines(self):
+        """Passing identity_file=None (e.g. when re-parsing a legacy block
+        that has no IdentityFile) suppresses the IdentityFile/IdentitiesOnly
+        lines instead of falling back to the default."""
+        config = SSHConfig(
+            alias="test-pod",
+            pod_id="pod123",
+            hostname="1.2.3.4",
+            port=12345,
+            identity_file=None,
+        )
+        assert config.identity_file is None
+        block_text = "".join(config.to_ssh_block("2022-01-20T12:00:00Z"))
+        assert "IdentitiesOnly" not in block_text
+        assert "IdentityFile" not in block_text
+
     def test_invalid_port(self):
         """Test port validation."""
         with pytest.raises(ValueError):
