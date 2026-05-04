@@ -383,9 +383,17 @@ def up_command(
                 f"🎉 Managed pod '[bold green]{final_alias}[/bold green]' is ready."
             )
         except Exception as setup_err:
+            from rp.utils.errors import RunPodCLIError
+
             console.print(
-                f"\n[bold yellow]⚠️  Pod created but setup failed:[/bold yellow] {setup_err}",
+                f"\n[bold yellow]⚠️  Pod created but setup failed:[/bold yellow] "
+                f"{setup_err}",
             )
+            # RunPodCLIError carries structured `details` (e.g. tail of remote
+            # stderr from SetupScriptError) — surface them so the user has
+            # something to act on instead of just an exit code.
+            if isinstance(setup_err, RunPodCLIError) and setup_err.details:
+                console.print(f"[dim]{setup_err.details}[/dim]")
             console.print(
                 f"    Pod is running and tracked as '[bold]{final_alias}[/bold]'."
             )

@@ -9,14 +9,20 @@ import os
 import subprocess
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from rich.console import Console
 
 from rp.core.secret_manager import SecretManager
+from rp.utils.errors import SetupScriptError
 
 ENV_FILE_ROOT = "/root/.rp-env"
 ENV_FILE_USER = "/home/user/.rp-env"
+REMOTE_SETUP_LOG = "/tmp/rp-setup.log"
+# When stderr exceeds this, only the tail is included in the error
+# message — full text remains in the remote log file for SSH inspection.
+_STDERR_TAIL_LINES = 20
 
 
 class PodSetup:
@@ -30,17 +36,39 @@ class PodSetup:
 
     def run_full_setup(self) -> None:
         """Run complete opinionated setup (tools, user, secrets, auto-shutdown)."""
-        self._wait_for_ssh()
-        self.install_tools()
-        self.create_non_root_user()
-        self.inject_secrets()
-        self.deploy_auto_shutdown()
+        with self._wrap_setup_errors():
+            self._wait_for_ssh()
+            self.install_tools()
+            self.create_non_root_user()
+            self.inject_secrets()
+            self.deploy_auto_shutdown()
 
     def run_managed_restart_setup(self) -> None:
         """Re-run setup needed after a managed pod restarts (secrets + auto-shutdown)."""
-        self._wait_for_ssh()
-        self.inject_secrets()
-        self.deploy_auto_shutdown()
+        with self._wrap_setup_errors():
+            self._wait_for_ssh()
+            self.inject_secrets()
+            self.deploy_auto_shutdown()
+
+    @contextmanager
+    def _wrap_setup_errors(self):
+        """Convert raw ssh CalledProcessError to SetupScriptError so the
+        remote stderr surfaces through `handle_cli_error` instead of getting
+        lost behind 'Command ssh ... returned non-zero exit status N'."""
+        try:
+            yield
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "").strip()
+            stdout = (e.stdout or "").strip()
+            # Prefer stderr; fall back to stdout if remote process logs there.
+            blob = stderr or stdout
+            tail = "\n".join(blob.splitlines()[-_STDERR_TAIL_LINES:])
+            hint = (
+                f"Full transcript on the pod: ssh {self.ssh_alias} "
+                f"'cat {REMOTE_SETUP_LOG}'"
+            )
+            details = f"{tail}\n\n{hint}" if tail else hint
+            raise SetupScriptError.remote_script_failed(e.returncode, details) from e
 
     def install_tools(self) -> None:
         """Install essential tools on the pod.
@@ -272,7 +300,17 @@ pgrep -x cron >/dev/null 2>&1 || {{
         raise TimeoutError(f"SSH not ready on {self.ssh_alias} after {timeout}s")
 
     def _ssh_run_script(self, script: str) -> subprocess.CompletedProcess:
-        """Run a bash script on the pod via SSH."""
+        """Run a bash script on the pod via SSH.
+
+        The script is wrapped so a copy of stdout+stderr is appended to
+        ``REMOTE_SETUP_LOG`` on the pod (via ``tee -a``). When something
+        fails the user can ``ssh <alias> 'cat /tmp/rp-setup.log'`` for the
+        full transcript instead of guessing from a one-line error.
+        """
+        wrapped = (
+            f"exec > >(tee -a {REMOTE_SETUP_LOG}) "
+            f"2> >(tee -a {REMOTE_SETUP_LOG} >&2)\n" + script
+        )
         result = subprocess.run(
             [
                 "ssh",
@@ -281,7 +319,7 @@ pgrep -x cron >/dev/null 2>&1 || {{
                 self.ssh_alias,
                 "bash -s",
             ],
-            input=script,
+            input=wrapped,
             text=True,
             capture_output=True,
             check=False,
