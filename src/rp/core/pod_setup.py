@@ -8,6 +8,7 @@ import importlib.resources
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from rich.console import Console
@@ -42,10 +43,27 @@ class PodSetup:
         self.deploy_auto_shutdown()
 
     def install_tools(self) -> None:
-        """Install essential tools on the pod."""
+        """Install essential tools on the pod.
+
+        Retried on transient apt failures (exit 100, often dpkg lock contention
+        from cloud-init / unattended-upgrades that the in-script wait didn't
+        catch). 3 attempts, 30s spacing — gives boot processes time to settle
+        without delaying the success path.
+        """
         self.console.print("    Installing tools on pod...")
-        setup_script = _TOOL_INSTALL_SCRIPT
-        self._ssh_run_script(setup_script)
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self._ssh_run_script(_TOOL_INSTALL_SCRIPT)
+                return
+            except subprocess.CalledProcessError as e:
+                if attempt == max_attempts or not _is_transient_apt_failure(e):
+                    raise
+                self.console.print(
+                    f"    [yellow]apt step failed (exit {e.returncode}); "
+                    f"retrying in 30s (attempt {attempt + 1}/{max_attempts})…[/yellow]"
+                )
+                time.sleep(30)
 
     def create_non_root_user(self) -> None:
         """Create non-root 'user' with sudo access for Claude CLI."""
@@ -208,8 +226,6 @@ pgrep -x cron >/dev/null 2>&1 || {{
 
     def _wait_for_ssh(self, timeout: int = 300, interval: int = 5) -> None:
         """Wait until SSH is accepting connections, updating SSH config if port changes."""
-        import time
-
         from rp.core.models import SSHConfig
         from rp.core.ssh_manager import SSHManager
         from rp.utils.api_client import RunPodAPIClient
@@ -294,6 +310,28 @@ pgrep -x cron >/dev/null 2>&1 || {{
         )
 
 
+def _is_transient_apt_failure(err: subprocess.CalledProcessError) -> bool:
+    """Return True if the failure looks like apt lock contention worth retrying.
+
+    apt's exit 100 covers a lot ("could not get lock", "404 from mirror",
+    "package not found"), but in practice on a fresh RunPod pod the dominant
+    cause is dpkg/apt locks held by cloud-init or unattended-upgrades. We
+    retry exit 100 conservatively, plus any failure whose output names a
+    known lock-contention marker.
+    """
+    if err.returncode == 100:
+        return True
+    blob = ((err.stderr or "") + (err.stdout or "")).lower()
+    markers = (
+        "could not get lock",
+        "unattended-upgr",
+        "dpkg frontend lock",
+        "dpkg was interrupted",
+        "is another process using it",
+    )
+    return any(m in blob for m in markers)
+
+
 def _get_gh_token() -> str | None:
     """Get GitHub token from gh CLI."""
     try:
@@ -369,7 +407,36 @@ def _get_aws_credentials(profile: str | None = None) -> dict[str, str]:
 
 # --- Inline setup scripts ---
 
-_TOOL_INSTALL_SCRIPT = """\
+# Wait for cloud-init / unattended-upgrades to release dpkg locks before
+# running apt. Without this, `rp setup` racing the pod's first-boot
+# provisioner produces transient exit-100 ("Could not get lock
+# /var/lib/dpkg/lock-frontend") that the user has to retry by hand.
+_APT_WAIT_PREAMBLE = """\
+_apt_wait() {
+    if command -v cloud-init >/dev/null 2>&1; then
+        cloud-init status --wait >/dev/null 2>&1 || true
+    fi
+    local deadline=$(( $(date +%s) + 180 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if pgrep -x unattended-upgr >/dev/null 2>&1 \
+            || fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 \
+            || fuser /var/lib/dpkg/lock >/dev/null 2>&1 \
+            || fuser /var/lib/apt/lists/lock >/dev/null 2>&1 \
+            || fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then
+            sleep 3
+            continue
+        fi
+        return 0
+    done
+    echo "warning: apt locks still held after 180s; proceeding anyway" >&2
+    return 0
+}
+_apt_wait
+"""
+
+_TOOL_INSTALL_SCRIPT = (
+    _APT_WAIT_PREAMBLE
+    + """\
 set -e
 export DEBIAN_FRONTEND=noninteractive
 command -v uv >/dev/null 2>&1 || { curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL=/usr/local/bin sh; }
@@ -412,6 +479,7 @@ grep -q 'rp-env' /root/.bashrc 2>/dev/null || cat >> /root/.bashrc << 'BASHRC'
 [ -f /etc/profile.d/rp-env.sh ] && source /etc/profile.d/rp-env.sh
 BASHRC
 """
+)
 
 _CREATE_USER_SCRIPT = """\
 set -e
