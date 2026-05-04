@@ -7,7 +7,7 @@ including creation, lifecycle management, and status tracking.
 
 import fcntl
 import json
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from typing import Any
 
 from rp.config import POD_CONFIG_FILE, ensure_config_dir_exists
@@ -180,6 +180,14 @@ class PodManager:
 
         if created is None:
             assert last_error is not None
+            # When every GPU variant matching the requested model came back
+            # capacity-failed, re-raise with a list of similar GPU types so
+            # the user can pick an alternative without manually running
+            # `rp pod gpus` and eyeballing VRAM tiers.
+            if _looks_like_capacity_error(last_error):
+                raise self._capacity_error_with_suggestions(
+                    last_error, gpu_type_ids, request.gpu_spec.count
+                ) from last_error
             raise last_error
 
         pod_id = created["id"]
@@ -315,6 +323,76 @@ class PodManager:
 
         return sorted(templates.values(), key=lambda t: t.identifier)
 
+    def _capacity_error_with_suggestions(
+        self,
+        original: Exception,
+        tried_gpu_ids: list[str],
+        count: int,
+    ) -> PodError:
+        """Build a PodError that lists nearest-VRAM GPU alternatives.
+
+        Ranking: closest |vram_i - vram_target| first. ``vram_target`` comes
+        from the highest-VRAM tried variant (which is what the user
+        effectively asked for). Excludes anything we already tried, since
+        retrying the same type won't free up capacity.
+        """
+        try:
+            all_gpus = self.api_client.get_gpus()
+        except Exception:
+            # If even the GPU listing fails, fall back to the original
+            # error so we don't mask one failure with another.
+            return self._wrap_capacity_error(original, suggestions=[])
+
+        tried = set(tried_gpu_ids)
+        target_vram = 0.0
+        for gpu in all_gpus:
+            if gpu.get("id") in tried:
+                with suppress(ValueError, TypeError):
+                    target_vram = max(target_vram, float(gpu.get("memoryInGb") or 0))
+
+        ranked: list[tuple[float, str, str, float]] = []
+        for gpu in all_gpus:
+            gpu_id = str(gpu.get("id", ""))
+            if not gpu_id or gpu_id in tried:
+                continue
+            try:
+                vram = float(gpu.get("memoryInGb") or 0)
+            except (ValueError, TypeError):
+                vram = 0.0
+            distance = abs(vram - target_vram)
+            ranked.append((distance, gpu_id, str(gpu.get("displayName", "")), vram))
+
+        ranked.sort(key=lambda r: (r[0], -r[3]))
+        suggestions = [(gpu_id, name, vram) for _, gpu_id, name, vram in ranked[:5]]
+        return self._wrap_capacity_error(original, suggestions=suggestions, count=count)
+
+    @staticmethod
+    def _wrap_capacity_error(
+        original: Exception,
+        *,
+        suggestions: list[tuple[str, str, float]],
+        count: int = 1,
+    ) -> PodError:
+        original_msg = getattr(original, "details", None) or str(original)
+        if not suggestions:
+            return PodError.creation_failed(
+                f"{original_msg}\n"
+                "(No alternative GPU types could be retrieved — "
+                "try `rp pod gpus` once capacity recovers.)"
+            )
+        prefix = f"{count}x" if count > 1 else ""
+        lines = [
+            "Out of capacity for the requested GPU. Closest alternatives by VRAM:",
+            "",
+        ]
+        lines.extend(
+            f"  rp up --gpu '{prefix}{gpu_id}'  ({name}, {vram:g}GB)"
+            for gpu_id, name, vram in suggestions
+        )
+        lines.append("")
+        lines.append(f"Original API error: {original_msg}")
+        return PodError.creation_failed("\n".join(lines))
+
     def create_pod_from_template(
         self,
         template_identifier: str,
@@ -371,3 +449,26 @@ class PodManager:
         )
 
         return self.create_pod(request)
+
+
+# RunPod returns capacity issues as plain GraphQL errors with prose
+# messages — no structured error code. The exact phrasing varies, so we
+# match a few known fragments. False positives are cheap (we still raise,
+# the message is just dressed up); false negatives leave the user with
+# the original raw error.
+_CAPACITY_MARKERS: tuple[str, ...] = (
+    "no longer any instances available",
+    "no instances available",
+    "no longer any pods",
+    "no available pods",
+    "out of capacity",
+    "out of stock",
+    "currently no available",
+    "not enough capacity",
+)
+
+
+def _looks_like_capacity_error(err: Exception) -> bool:
+    """True if the error message reads like a capacity exhaustion."""
+    blob = (getattr(err, "details", None) or str(err) or "").lower()
+    return any(m in blob for m in _CAPACITY_MARKERS)
