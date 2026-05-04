@@ -27,6 +27,10 @@ Uses `rp pod create` under the hood, then layers on: tool installation (uv, tmux
 
 Managed pods are marked with `managed: true` in metadata. On `rp start`, managed pods get secrets re-injected and auto-shutdown redeployed.
 
+The tool-install step waits for cloud-init / unattended-upgrades to release the dpkg lock before running apt, and the whole step is retried up to 3× (30s backoff) on transient apt failures (exit 100 / "Could not get lock"). When something does fail, the full transcript is teed to `/tmp/rp-setup.log` on the pod — `ssh <alias> 'cat /tmp/rp-setup.log'` for post-mortem.
+
+When the requested GPU type is fully out of capacity, the error message includes the five closest-VRAM alternatives as copy-pasteable `rp up --gpu '<count>x<id>'` commands.
+
 ```bash
 rp up h100                              # from template
 rp up --gpu 2xH100 --storage 500GB     # explicit (alias auto-generated from settings)
