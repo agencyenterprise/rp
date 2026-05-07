@@ -214,7 +214,7 @@ rp template create ml-nv --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 -
 
 #### `rp template list` / `rp template delete <id>`
 
-List or delete templates. Built-in defaults: `h100`, `2h100`, `4h100`, `5090`, `a40` (all use `{project}_{person}_{i}` pattern).
+List or delete templates. Built-in defaults: `h100`, `2h100`, `4h100`, `8h100`, `h200`, `2h200`, `4h200`, `8h200`, `b200`, `2b200`, `4b200`, `8b200`, `5090`, `a40` (all use `{project}_{person}_{i}` pattern).
 
 ---
 

@@ -75,7 +75,7 @@ rp down h100-1
 
 ### Templates
 
-Built-in: `h100`, `2h100`, `4h100`, `5090`, `a40` (all 500GB container disk, no volume, using `{project}_{person}_{i}` naming).
+Built-in: `h100`, `2h100`, `4h100`, `8h100`, `h200`, `2h200`, `4h200`, `8h200`, `b200`, `2b200`, `4b200`, `8b200`, `5090`, `a40` (all 500GB container disk, no volume, using `{project}_{person}_{i}` naming).
 
 ```bash
 # Set naming variables in .rp_settings.json (or ~/.rp_settings.json for global)
