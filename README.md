@@ -41,7 +41,7 @@ rp down h100-1
 
 | Command | Description |
 |---|---|
-| `rp up [template] [--gpu SPEC --storage SIZE] [--alias NAME] [--network-volume ID]` | Create pod + install tools + inject secrets + deploy auto-shutdown |
+| `rp up [template] [--gpu SPEC] [--disk SIZE] [--persistent-volume SIZE] [--alias NAME] [--network-volume ID]` | Create pod + install tools + inject secrets + deploy auto-shutdown |
 | `rp claude <alias> [-p PROMPT] [-d DIR]` | Launch Claude in tmux on pod (autonomous or interactive) |
 | `rp status <alias>` | Check remote Claude progress and read report |
 | `rp logs <alias>` | Sync remote Claude logs locally |
@@ -62,7 +62,7 @@ rp down h100-1
 
 | Command | Description |
 |---|---|
-| `rp pod create [template] [--gpu --storage ...] [--alias]` | Create bare pod, run setup.sh |
+| `rp pod create [template] [--gpu] [--disk SIZE] [--persistent-volume SIZE] [--alias]` | Create bare pod, run setup.sh |
 | `rp pod start <alias>` | Resume stopped pod (re-injects secrets for managed pods) |
 | `rp pod stop <alias>` | Stop pod |
 | `rp pod destroy <alias> [-f]` | Terminate pod permanently |
@@ -87,7 +87,7 @@ rp pod create h100      # creates ast_alex_1, ast_alex_2, etc.
 RP_PROJECT=other rp pod create h100   # creates other_alex_1
 
 # Custom templates
-rp template create ml --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --storage 1TB
+rp template create ml --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --persistent-volume 1TB
 rp template list
 rp template delete ml
 ```
