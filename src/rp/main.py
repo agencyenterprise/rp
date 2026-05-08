@@ -6,7 +6,10 @@ Commands are split into two tiers:
 - `rp pod`: low-level pod management (create, start, stop, destroy, etc.)
 """
 
+import importlib.metadata
 import json
+import os
+import sys
 
 import typer
 
@@ -40,8 +43,47 @@ from rp.cli.commands import (
     up_command,
 )
 from rp.cli.utils import console
-from rp.config import POD_CONFIG_FILE
+from rp.config import CONFIG_DIR, POD_CONFIG_FILE
+from rp.core import version_check
 from rp.core.models import AppConfig
+
+VERSION_CACHE_FILE = CONFIG_DIR / "version_check.json"
+
+
+def _check_for_updates_safe() -> str | None:
+    """Wrapper around version_check.check_for_updates with the rp-specific defaults.
+
+    Split out so tests can stub it cleanly.
+    """
+    try:
+        installed = importlib.metadata.version("rp")
+    except importlib.metadata.PackageNotFoundError:
+        return None
+    return version_check.check_for_updates(
+        installed_version=installed,
+        cache_path=VERSION_CACHE_FILE,
+    )
+
+
+def _maybe_print_update_notice() -> None:
+    """Print an upgrade notice to stderr after a command finishes.
+
+    No-op when:
+    - RP_NO_VERSION_CHECK is set (CI / scripted use)
+    - typer is invoking shell completion (the _RP_COMPLETE protocol expects
+      a strict stdout/stderr contract; any extra output breaks it)
+    - the network/cache check yields nothing or raises
+    """
+    try:
+        if os.environ.get("RP_NO_VERSION_CHECK"):
+            return
+        if os.environ.get("_RP_COMPLETE"):
+            return
+        notice = _check_for_updates_safe()
+        if notice:
+            print(notice, file=sys.stderr)
+    except Exception:
+        return
 
 
 def complete_alias(incomplete: str) -> list[str]:
@@ -539,7 +581,10 @@ def main():
     app.add_typer(pod_app, name="pod")
     app.add_typer(template_app, name="template")
     app.add_typer(secrets_app, name="secrets")
-    app()
+    try:
+        app()
+    finally:
+        _maybe_print_update_notice()
 
 
 if __name__ == "__main__":

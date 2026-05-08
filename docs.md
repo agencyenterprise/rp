@@ -13,6 +13,10 @@ rp --install-completion  # optional tab completion
 
 API key priority: `RUNPOD_API_KEY` env var → macOS Keychain → interactive prompt (saves to Keychain).
 
+### Update notifications
+
+After each command, `rp` prints a one-line notice on stderr if a newer version is available on `main` of the GitHub repo. The check fetches `pyproject.toml` from `raw.githubusercontent.com` (no auth, public repo), caches the result for 24h in `~/.config/rp/version_check.json`, and degrades silently on any network or parse error. Set `RP_NO_VERSION_CHECK=1` to disable.
+
 ---
 
 ## Command Reference
@@ -250,6 +254,7 @@ The following files in `~/.config/rp/` are still supported:
 | `pods.json` | Aliases, pod metadata (including `managed` flag), templates |
 | `setup.sh` | Script run on bare pods during create/start |
 | `.env` | Legacy template variables (overridden by `.rp_settings.json`, overridden by `RP_` env vars) |
+| `version_check.json` | Cached result of the GitHub update check; refreshed every 24h |
 
 ### pods.json
 

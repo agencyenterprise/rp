@@ -13,6 +13,8 @@ uv tool install https://github.com/agencyenterprise/rp.git
 rp --install-completion  # optional tab completion
 ```
 
+After each command, `rp` checks GitHub for a newer version and prints a one-line upgrade hint on stderr when behind. The check is cached for 24h and silent on network errors. Set `RP_NO_VERSION_CHECK=1` to disable.
+
 ## Quick Start
 
 ```bash
