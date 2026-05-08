@@ -6,6 +6,7 @@ verify the typer surface advertises the new names, defaults are correct,
 and the old names produce a usage error rather than silently working.
 """
 
+import re
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,11 +24,15 @@ app.add_typer(secrets_app, name="secrets")
 
 runner = CliRunner()
 
+# Typer/Rich styles each `-` as its own ANSI span, so `--disk` isn't a
+# contiguous substring of styled help output. Strip codes before asserting.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
 
 def _help(args: list[str]) -> str:
     result = runner.invoke(app, [*args, "--help"])
     assert result.exit_code == 0, result.output
-    return result.output
+    return _ANSI_RE.sub("", result.output)
 
 
 class TestUpHelp:
