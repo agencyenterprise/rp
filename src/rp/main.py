@@ -89,20 +89,30 @@ def up(
     ),
     alias: str = typer.Option(None, "--alias", help="SSH host alias to assign"),
     gpu: str = typer.Option(None, "--gpu", help="GPU spec like '2xA100'"),
-    storage: str = typer.Option(
-        None, "--storage", help="Volume size like '500GB' or '1TB'"
+    disk: str = typer.Option(
+        None,
+        "--disk",
+        help="Container disk size, e.g. '500GB' (ephemeral, deleted with the pod). "
+        "Overrides the template's container disk; defaults to template value or 500GB.",
+    ),
+    persistent_volume: str = typer.Option(
+        None,
+        "--persistent-volume",
+        help="Persistent volume size, e.g. '500GB' (mounted at /workspace, survives stop/start). "
+        "Overrides the template's volume; defaults to template value or 0GB (no volume).",
     ),
     network_volume: str = typer.Option(
         None,
         "--network-volume",
-        help="RunPod network volume ID to attach (mounted at /workspace)",
+        help="Existing RunPod network volume ID to attach (mounted at /workspace, "
+        "shared across pods). Overrides --persistent-volume.",
     ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite alias if it exists"
     ),
 ):
     """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
-    up_command(template, alias, gpu, storage, force, network_volume)
+    up_command(template, alias, gpu, disk, persistent_volume, force, network_volume)
 
 
 @app.command()
@@ -249,11 +259,17 @@ def create(
         None, "--alias", help="SSH host alias to assign (e.g., alexs-machine)"
     ),
     gpu: str = typer.Option(None, "--gpu", help="GPU spec like '2xA100'"),
-    storage: str = typer.Option(
-        None, "--storage", help="Volume size like '500GB' or '1TB'"
+    disk: str = typer.Option(
+        None,
+        "--disk",
+        help="Container disk size, e.g. '500GB' (ephemeral, deleted with the pod). "
+        "Default: 500GB.",
     ),
-    container_disk: str = typer.Option(
-        None, "--container-disk", help="Container disk size like '20GB' (default: 20GB)"
+    persistent_volume: str = typer.Option(
+        None,
+        "--persistent-volume",
+        help="Persistent volume size, e.g. '500GB' (mounted at /workspace, survives stop/start). "
+        "Default: 0GB (no volume).",
     ),
     image: str = typer.Option(
         None,
@@ -263,7 +279,8 @@ def create(
     network_volume: str = typer.Option(
         None,
         "--network-volume",
-        help="RunPod network volume ID to attach (mounted at /workspace)",
+        help="Existing RunPod network volume ID to attach (mounted at /workspace, "
+        "shared across pods). Overrides --persistent-volume.",
     ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite alias if it exists"
@@ -281,8 +298,8 @@ def create(
     create_command(
         alias,
         gpu,
-        storage,
-        container_disk,
+        persistent_volume,
+        disk,
         template,
         image,
         force,
@@ -407,11 +424,17 @@ def template_create(
         help="Alias pattern with {i} placeholder (e.g., 'alex-ast-{i}')",
     ),
     gpu: str = typer.Option(..., "--gpu", help="GPU spec like '2xA100'"),
-    storage: str = typer.Option(
-        ..., "--storage", help="Volume size like '500GB' or '1TB'"
+    disk: str = typer.Option(
+        "500GB",
+        "--disk",
+        help="Container disk size, e.g. '500GB' (ephemeral, deleted with the pod). "
+        "Default: 500GB.",
     ),
-    container_disk: str = typer.Option(
-        None, "--container-disk", help="Container disk size like '20GB' (default: 20GB)"
+    persistent_volume: str = typer.Option(
+        "0GB",
+        "--persistent-volume",
+        help="Persistent volume size, e.g. '500GB' (mounted at /workspace, survives stop/start). "
+        "Default: 0GB (no volume).",
     ),
     image: str = typer.Option(
         None,
@@ -421,7 +444,8 @@ def template_create(
     network_volume: str = typer.Option(
         None,
         "--network-volume",
-        help="RunPod network volume ID to attach to pods created from this template",
+        help="Existing RunPod network volume ID to attach to pods created from this template "
+        "(mounted at /workspace, shared across pods). Overrides --persistent-volume.",
     ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite template if it exists"
@@ -432,8 +456,8 @@ def template_create(
         identifier,
         alias_pattern,
         gpu,
-        storage,
-        container_disk,
+        persistent_volume,
+        disk,
         image,
         network_volume,
         force,

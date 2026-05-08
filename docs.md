@@ -19,7 +19,7 @@ API key priority: `RUNPOD_API_KEY` env var → macOS Keychain → interactive pr
 
 ### Opinionated Commands (Managed Pods)
 
-#### `rp up [template] [--alias NAME] [--gpu SPEC] [--storage SIZE] [--network-volume ID] [-f]`
+#### `rp up [template] [--alias NAME] [--gpu SPEC] [--disk SIZE] [--persistent-volume SIZE] [--network-volume ID] [-f]`
 
 Create a pod with full opinionated setup. This is the recommended way to create pods.
 
@@ -32,11 +32,12 @@ The tool-install step waits for cloud-init / unattended-upgrades to release the 
 When the requested GPU type is fully out of capacity, the error message includes the five closest-VRAM alternatives as copy-pasteable `rp up --gpu '<count>x<id>'` commands.
 
 ```bash
-rp up h100                              # from template
-rp up --gpu 2xH100 --storage 500GB     # explicit (alias auto-generated from settings)
-rp up --gpu 2xH100 --storage 500GB --alias my-pod  # explicit with custom alias
-rp up h100 --alias custom-name          # template with alias override
-rp up h100 --network-volume vol_abc123  # attach a network volume
+rp up h100                                       # from template
+rp up --gpu 2xH100                               # explicit (500GB disk, no persistent volume)
+rp up --gpu 2xH100 --disk 1TB                    # bigger container disk
+rp up --gpu 2xH100 --persistent-volume 500GB     # add a persistent volume at /workspace
+rp up h100 --alias custom-name                   # template with alias override
+rp up h100 --network-volume vol_abc123           # attach an existing network volume
 ```
 
 When no `--alias` is given (with or without a template), the alias is auto-generated from `{project}_{person}_{i}` using variables from `.rp_settings.json`.
@@ -140,16 +141,18 @@ If no alias is detected in the arguments, an interactive pod selector is shown.
 
 All low-level pod management commands live under the `rp pod` subcommand.
 
-#### `rp pod create [template] [--alias NAME] [--gpu SPEC] [--storage SIZE] [--container-disk SIZE] [--image IMAGE] [--network-volume ID] [-f] [--dry-run]`
+#### `rp pod create [template] [--alias NAME] [--gpu SPEC] [--disk SIZE] [--persistent-volume SIZE] [--image IMAGE] [--network-volume ID] [-f] [--dry-run]`
 
 Create a bare pod, add alias, wait for SSH, run `~/.config/rp/setup.sh`. No secret injection or auto-shutdown. Use `rp up` for full managed setup.
 
+`--disk` sets the ephemeral container disk (default: 500GB). `--persistent-volume` adds a per-pod persistent volume mounted at `/workspace` (default: 0GB / no volume) — survives stop/start, deleted on destroy. `--network-volume` attaches an existing shared network volume at `/workspace` and overrides `--persistent-volume`.
+
 ```bash
-rp pod create --gpu 2xA100 --storage 500GB  # alias auto-generated from settings
-rp pod create --gpu 2xA100 --storage 500GB --alias my-pod  # explicit alias
-rp pod create h100                          # from template (auto-numbered alias)
-rp pod create h100 --alias custom-name      # template with alias override
-rp pod create --gpu H100 --storage 0GB --network-volume vol_abc123
+rp pod create --gpu 2xA100                              # 500GB disk, no persistent volume
+rp pod create --gpu 2xA100 --disk 1TB --alias my-pod    # bigger disk, explicit alias
+rp pod create h100                                      # from template (auto-numbered alias)
+rp pod create h100 --alias custom-name                  # template with alias override
+rp pod create --gpu H100 --network-volume vol_abc123    # attach an existing network volume
 ```
 
 #### `rp pod start <alias>`
@@ -198,13 +201,15 @@ The GPU ID or display name substring can be used as the `--gpu` argument in `rp 
 
 ### Templates
 
-#### `rp template create <id> --alias-pattern PATTERN --gpu SPEC --storage SIZE [--container-disk SIZE] [--image IMAGE] [--network-volume ID] [-f]`
+#### `rp template create <id> --alias-pattern PATTERN --gpu SPEC [--disk SIZE] [--persistent-volume SIZE] [--image IMAGE] [--network-volume ID] [-f]`
 
 Create a reusable pod template. Pattern must contain `{i}` placeholder for auto-numbering. Can also include variable placeholders like `{project}` and `{person}` that are resolved from `~/.config/rp/.env` or `RP_`-prefixed environment variables.
 
+`--disk` defaults to `500GB`; `--persistent-volume` defaults to `0GB` (no volume). Override either at `rp up` / `rp pod create` time with the same flag names.
+
 ```bash
-rp template create ml --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --storage 1TB
-rp template create ml-nv --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --storage 0GB --network-volume vol_abc123
+rp template create ml --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --persistent-volume 1TB
+rp template create ml-nv --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --network-volume vol_abc123
 ```
 
 #### `rp template list` / `rp template delete <id>`
@@ -297,7 +302,7 @@ Edge case: `x` in model name (e.g., `rtx4090`) is fine — only treated as count
 
 ### Network Volumes
 
-RunPod network volumes are persistent storage that can be shared across pods and survive pod termination. Pass a network volume ID via `--network-volume` to attach one at `/workspace`. When a network volume is specified, it takes precedence over the `--storage` volume parameter (set `--storage 0GB` to avoid allocating a separate pod volume).
+RunPod network volumes are persistent storage that can be shared across pods and survive pod termination. Pass a network volume ID via `--network-volume` to attach one at `/workspace`. When a network volume is specified, it takes precedence over `--persistent-volume` — leave `--persistent-volume` at its default (0GB) to avoid allocating a separate per-pod volume.
 
 Network volume IDs can be found in the RunPod web console under Storage. Templates can include a `network_volume_id` to automatically attach a volume to all pods created from that template.
 

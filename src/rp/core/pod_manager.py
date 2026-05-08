@@ -400,6 +400,8 @@ class PodManager:
         dry_run: bool = False,
         alias_override: str | None = None,
         network_volume_id: str | None = None,
+        container_disk_gb_override: int | None = None,
+        volume_gb_override: int | None = None,
     ) -> Pod:
         """Create a pod using a template, finding the next available alias index or using provided alias."""
         from rp.config import load_template_vars
@@ -425,13 +427,18 @@ class PodManager:
         from rp.cli.utils import parse_gpu_spec, parse_storage_spec
 
         gpu_spec = parse_gpu_spec(template.gpu_spec)
-        volume_gb = parse_storage_spec(template.storage_spec)
-
-        container_disk_gb = (
-            parse_storage_spec(template.container_disk_spec)
-            if template.container_disk_spec is not None
-            else 20
+        volume_gb = (
+            volume_gb_override
+            if volume_gb_override is not None
+            else parse_storage_spec(template.storage_spec)
         )
+
+        if container_disk_gb_override is not None:
+            container_disk_gb = container_disk_gb_override
+        elif template.container_disk_spec is not None:
+            container_disk_gb = parse_storage_spec(template.container_disk_spec)
+        else:
+            container_disk_gb = 20
         image = template.image or PodCreateRequest.model_fields["image"].default
         nv_id = network_volume_id or template.network_volume_id
 
