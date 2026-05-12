@@ -82,6 +82,41 @@ def _auto_clean() -> None:
         pass
 
 
+def _confirm_cross_session_or_exit(
+    pod_manager: PodManager,
+    alias: str,
+    *,
+    all_sessions: bool,
+) -> None:
+    """Prompt before acting on a pod owned by another session. typer.Exit on no.
+
+    No-op when: no session is active, --all-sessions was passed, the pod is
+    owned by us, or the pod has no owner (legacy / pre-feature pod).
+    """
+    if all_sessions:
+        return
+    from rp.core.session import current_session_id
+
+    session = current_session_id()
+    if session is None:
+        return
+    meta = pod_manager.config.pod_metadata.get(alias)
+    if meta is None or meta.owner_session_id is None:
+        return
+    if meta.owner_session_id == session:
+        return
+
+    note_blurb = f', note: "{meta.note}"' if meta.note else ""
+    response = typer.confirm(
+        f"⚠ Pod '{alias}' belongs to another Claude session"
+        f" (owner {meta.owner_session_id[:8]}…{note_blurb})\n"
+        f"Destroy anyway?"
+    )
+    if not response:
+        console.print("❌ Cancelled.")
+        raise typer.Exit(0)
+
+
 def _print_note_reminder_if_needed(alias: str, note: str | None) -> None:
     """When inside Claude Code and no note was given, print a single-line reminder.
 
@@ -520,12 +555,18 @@ def down_command(
     alias: str | None,
     skip_logs: bool = False,
     destroy: bool = False,
+    all_sessions: bool = False,
 ) -> None:
     """Sync logs then stop (default) or destroy (--destroy) a managed pod."""
     try:
         pod_manager = get_pod_manager()
         alias = select_pod_if_needed(alias, pod_manager)
         pod_id = pod_manager.get_pod_id(alias)
+
+        if destroy:
+            _confirm_cross_session_or_exit(
+                pod_manager, alias, all_sessions=all_sessions
+            )
 
         if not skip_logs:
             try:
@@ -563,11 +604,18 @@ def down_command(
 
         _auto_clean()
 
+    except typer.Exit as e:
+        if e.exit_code != 0:
+            raise
     except Exception as e:
         handle_cli_error(e)
 
 
-def destroy_command(alias: str | None, force: bool = False) -> None:
+def destroy_command(
+    alias: str | None,
+    force: bool = False,
+    all_sessions: bool = False,
+) -> None:
     """Terminate a pod, remove SSH config, and delete the alias."""
     try:
         pod_manager = get_pod_manager()
@@ -576,6 +624,8 @@ def destroy_command(alias: str | None, force: bool = False) -> None:
         # mistake surfaces as "Unknown host alias" instead of a generic
         # error after the destructive y/N prompt.
         pod_manager.get_pod_id(alias)
+
+        _confirm_cross_session_or_exit(pod_manager, alias, all_sessions=all_sessions)
 
         # Confirm destruction unless force is set
         if not force:
@@ -603,6 +653,10 @@ def destroy_command(alias: str | None, force: bool = False) -> None:
         # Auto-clean invalid aliases and completed tasks
         _auto_clean()
 
+    except typer.Exit as e:
+        if e.exit_code != 0:
+            raise
+        # exit_code == 0 means the user cancelled — return cleanly
     except Exception as e:
         handle_cli_error(e)
 

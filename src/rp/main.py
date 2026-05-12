@@ -181,9 +181,14 @@ def down(
         "Use only when (a) the pod is broken, or (b) all code is committed/pushed "
         "and all data is on S3 — anything in /workspace will be lost.",
     ),
+    all_sessions: bool = typer.Option(
+        False,
+        "--all-sessions",
+        help="Skip the cross-session confirmation prompt when used with --destroy",
+    ),
 ):
     """Sync logs and stop a pod (use --destroy to terminate permanently)."""
-    down_command(alias, skip_logs, destroy)
+    down_command(alias, skip_logs, destroy, all_sessions=all_sessions)
 
 
 @app.command()
@@ -409,9 +414,14 @@ def destroy(
         autocompletion=complete_alias,
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+    all_sessions: bool = typer.Option(
+        False,
+        "--all-sessions",
+        help="Skip the cross-session confirmation prompt",
+    ),
 ):
     """Terminate a pod permanently, remove alias and SSH config."""
-    destroy_command(host_alias, force)
+    destroy_command(host_alias, force, all_sessions=all_sessions)
 
 
 @pod_app.command()
