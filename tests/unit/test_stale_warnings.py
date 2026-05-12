@@ -48,3 +48,40 @@ def test_stale_stopped_pods_filters_by_threshold(temp_config_dir):  # noqa: ARG0
     stale = pm.stale_stopped_pods(threshold_hours=24, now=now)
     aliases = {alias for alias, _ in stale}
     assert aliases == {"old"}
+
+
+def test_stale_banner_emits_when_pods_present(monkeypatch, capsys, temp_config_dir):  # noqa: ARG001
+    from datetime import datetime, timedelta
+
+    from rp.cli import commands
+
+    monkeypatch.delenv("RP_NO_STALE_WARNING", raising=False)
+
+    pm = commands.get_pod_manager()
+    pm.add_alias("old1", "p1", note="AE-1234: classifier")
+    pm.add_alias("old2", "p2")
+    now = datetime.now(UTC)
+    pm.config.pod_metadata["old1"].stopped_at = now - timedelta(hours=48)
+    pm.config.pod_metadata["old2"].stopped_at = now - timedelta(hours=48)
+
+    commands._print_stale_banner_if_any(pm)
+    out = capsys.readouterr().out
+    assert "old1" in out
+    assert "old2" in out
+    assert "AE-1234" in out
+    assert "rp prune" in out
+
+
+def test_stale_banner_suppressed_by_env(monkeypatch, capsys, temp_config_dir):  # noqa: ARG001
+    from datetime import datetime, timedelta
+
+    from rp.cli import commands
+
+    monkeypatch.setenv("RP_NO_STALE_WARNING", "1")
+    pm = commands.get_pod_manager()
+    pm.add_alias("old1", "p1")
+    pm.config.pod_metadata["old1"].stopped_at = datetime.now(UTC) - timedelta(hours=48)
+
+    commands._print_stale_banner_if_any(pm)
+    out = capsys.readouterr().out
+    assert "old1" not in out

@@ -5,6 +5,7 @@ This module implements all the CLI commands using the refactored service layer,
 providing clean separation between CLI interface and business logic.
 """
 
+import contextlib
 import os
 from pathlib import Path
 
@@ -65,21 +66,54 @@ def get_ssh_manager() -> SSHManager:
     return _ssh_manager
 
 
+def _print_stale_banner_if_any(pod_manager: PodManager) -> None:
+    """Print a one-shot banner about stopped pods accruing storage cost.
+
+    Silent when: env var RP_NO_STALE_WARNING is set, or no pods are
+    stale. Threshold defaults to 24h, override with RP_STALE_THRESHOLD_HOURS.
+    """
+    if os.environ.get("RP_NO_STALE_WARNING"):
+        return
+    try:
+        threshold = int(os.environ.get("RP_STALE_THRESHOLD_HOURS", "24"))
+    except ValueError:
+        threshold = 24
+
+    from rp.cli.utils import format_age
+
+    stale = pod_manager.stale_stopped_pods(threshold_hours=threshold)
+    if not stale:
+        return
+
+    n = len(stale)
+    plural = "pods" if n != 1 else "pod"
+    console.print(f"\n[yellow]⚠ {n} stopped {plural} accruing storage costs:[/yellow]")
+    for alias, meta in stale:
+        note_blurb = meta.note if meta.note else "(none)"
+        assert meta.stopped_at is not None  # guaranteed by stale_stopped_pods filter
+        age = format_age(meta.stopped_at)
+        console.print(f"    [bold]{alias}[/bold]   stopped {age}   note: {note_blurb}")
+    console.print(
+        "  Review: [bold]rp prune[/bold]   "
+        "Destroy now: [bold]rp down <alias> --destroy[/bold]\n"
+    )
+
+
 def _auto_clean() -> None:
-    """Silently perform cleanup tasks (invalid aliases, SSH blocks)."""
+    """Silent post-command sweep: invalid aliases, orphan SSH blocks, plus stale-pod banner."""
     try:
         pod_manager = get_pod_manager()
         ssh_manager = get_ssh_manager()
 
-        # Clean invalid aliases
         pod_manager.clean_invalid_aliases()
-
-        # Prune SSH blocks
         valid_aliases = set(pod_manager.aliases.keys())
         ssh_manager.prune_managed_blocks(valid_aliases)
     except Exception:
-        # Silently fail - don't disrupt the user's workflow
         pass
+
+    # Separate suppress so a sweep failure doesn't swallow real command output silently.
+    with contextlib.suppress(Exception):
+        _print_stale_banner_if_any(get_pod_manager())
 
 
 def _confirm_cross_session_or_exit(
