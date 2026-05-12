@@ -23,6 +23,7 @@ from rp.cli.commands import (
     gpus_command,
     list_command,
     logs_command,
+    note_command,
     run_command,
     scp_command,
     secrets_inject_command,
@@ -465,6 +466,26 @@ def gpus(
 ):
     """List available GPU types from RunPod."""
     gpus_command(filter)
+
+
+@pod_app.command("note")
+def pod_note(
+    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
+    text: str = typer.Argument(None, help="Note text. Omit to print the current note."),
+    append: bool = typer.Option(
+        False, "--append", "-a", help="Append to the existing note instead of replacing"
+    ),
+    clear: bool = typer.Option(False, "--clear", help="Remove the note entirely"),
+):
+    """Set, append to, clear, or print the one-line note attached to a pod.
+
+    Examples:
+        rp pod note my-pod "AE-1234: classifier eval"
+        rp pod note my-pod --append "checkpoint at /workspace/runs/v3"
+        rp pod note my-pod --clear
+        rp pod note my-pod
+    """
+    note_command(alias, text, append=append, clear=clear)
 
 
 # ── Template subcommands ─────────────────────────────────────────────

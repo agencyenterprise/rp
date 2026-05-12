@@ -1368,3 +1368,39 @@ def logs_command(alias: str | None) -> None:
 
     except Exception as e:
         handle_cli_error(e)
+
+
+def note_command(
+    alias: str | None,
+    text: str | None,
+    *,
+    append: bool = False,
+    clear: bool = False,
+) -> None:
+    """Set / append / clear / show a pod's note."""
+    try:
+        pod_manager = get_pod_manager()
+        alias = select_pod_if_needed(alias, pod_manager)
+
+        if clear:
+            pod_manager.clear_note(alias)
+            console.print(f"🗑️  Cleared note for '[bold]{alias}[/bold]'")
+            return
+
+        if text is None:
+            current = pod_manager.get_note(alias)
+            if current:
+                console.print(current)
+            else:
+                console.print(f"[dim](no note set for {alias})[/dim]")
+            return
+
+        if append:
+            pod_manager.append_note(alias, text)
+            console.print(f"✏️  Appended to note for '[bold]{alias}[/bold]'")
+        else:
+            pod_manager.set_note(alias, text)
+            console.print(f"✏️  Set note for '[bold]{alias}[/bold]'")
+
+    except Exception as e:
+        handle_cli_error(e)

@@ -112,6 +112,35 @@ class PodManager:
             if alias in config.pod_metadata:
                 config.pod_metadata[alias].managed = managed
 
+    def get_note(self, alias: str) -> str | None:
+        """Return the note for an alias, or None if unset."""
+        self.get_pod_id(alias)  # validates alias exists
+        meta = self.config.pod_metadata.get(alias)
+        return meta.note if meta else None
+
+    def set_note(self, alias: str, note: str) -> None:
+        """Replace the note for an alias."""
+        with self._locked_config() as config:
+            meta = config.pod_metadata.get(alias)
+            if meta is None:
+                raise AliasError.not_found(alias, list(config.get_all_aliases()))
+            meta.note = note
+
+    def append_note(self, alias: str, addition: str) -> None:
+        """Append text to an existing note (newline-separated). Creates the note if absent."""
+        with self._locked_config() as config:
+            meta = config.pod_metadata.get(alias)
+            if meta is None:
+                raise AliasError.not_found(alias, list(config.get_all_aliases()))
+            meta.note = f"{meta.note}\n{addition}" if meta.note else addition
+
+    def clear_note(self, alias: str) -> None:
+        with self._locked_config() as config:
+            meta = config.pod_metadata.get(alias)
+            if meta is None:
+                raise AliasError.not_found(alias, list(config.get_all_aliases()))
+            meta.note = None
+
     def remove_alias(self, alias: str, missing_ok: bool = False) -> str:
         """Remove an alias mapping, returning the pod ID."""
         with self._locked_config() as config:
