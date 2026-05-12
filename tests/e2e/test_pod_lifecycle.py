@@ -34,7 +34,7 @@ def _create_pod_with_fallback(cli_runner, alias: str, storage: str = "10GB"):
                 alias,
                 "--gpu",
                 gpu,
-                "--persistent-volume",
+                "--storage",
                 storage,
                 "--no-setup",
             ]

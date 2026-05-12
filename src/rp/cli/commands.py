@@ -155,7 +155,7 @@ def _resolve_default_alias(pod_manager: PodManager) -> str:
 def create_command(  # noqa: PLR0915  # Function complexity acceptable for main command
     alias: str | None = None,
     gpu: str | None = None,
-    persistent_volume: str | None = None,
+    storage: str | None = None,
     disk: str | None = None,
     template: str | None = None,
     image: str | None = None,
@@ -237,11 +237,7 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
                 alias = _resolve_default_alias(pod_manager)
 
             gpu_spec = parse_gpu_spec(gpu)
-            volume_gb = (
-                parse_storage_spec(persistent_volume)
-                if persistent_volume is not None
-                else 0
-            )
+            volume_gb = parse_storage_spec(storage) if storage is not None else 0
 
             container_disk_gb = parse_storage_spec(disk) if disk is not None else 500
 
@@ -343,7 +339,7 @@ def up_command(
     alias: str | None = None,
     gpu: str | None = None,
     disk: str | None = None,
-    persistent_volume: str | None = None,
+    storage: str | None = None,
     force: bool = False,
     network_volume: str | None = None,
     note: str | None = None,
@@ -356,11 +352,7 @@ def up_command(
             raise ValueError("Must specify either a template or --gpu")
 
         disk_gb = parse_storage_spec(disk) if disk is not None else None
-        volume_gb = (
-            parse_storage_spec(persistent_volume)
-            if persistent_volume is not None
-            else None
-        )
+        volume_gb = parse_storage_spec(storage) if storage is not None else None
 
         # Create the pod using existing create logic
         if template:
@@ -803,7 +795,7 @@ def template_create_command(
     identifier: str,
     alias_template: str,
     gpu: str,
-    persistent_volume: str = "0GB",
+    storage: str = "0GB",
     disk: str = "500GB",
     image: str | None = None,
     network_volume: str | None = None,
@@ -815,7 +807,7 @@ def template_create_command(
             "identifier": identifier,
             "alias_template": alias_template,
             "gpu_spec": gpu,
-            "storage_spec": persistent_volume,
+            "storage_spec": storage,
             "container_disk_spec": disk,
         }
 
@@ -834,7 +826,7 @@ def template_create_command(
         console.print(f"   Alias template: {alias_template}")
         console.print(f"   GPU: {gpu}")
         console.print(f"   Disk: {disk}")
-        console.print(f"   Persistent volume: {persistent_volume}")
+        console.print(f"   Persistent volume: {storage}")
         if image is not None:
             console.print(f"   Image: {image}")
         if network_volume is not None:

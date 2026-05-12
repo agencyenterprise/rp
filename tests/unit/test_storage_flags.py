@@ -1,9 +1,10 @@
-"""CLI surface tests for the renamed storage flags.
+"""CLI surface tests for the storage flags.
 
-The old `--storage` and `--container-disk` flags were renamed to
-`--persistent-volume` and `--disk` (respectively) in 0.11.0. These tests
-verify the typer surface advertises the new names, defaults are correct,
-and the old names produce a usage error rather than silently working.
+`--storage` (persistent volume) and `--disk` (container disk) are the current
+flag names. `--persistent-volume` was renamed to `--storage` and
+`--container-disk` was renamed to `--disk` in earlier releases.
+These tests verify the typer surface advertises the correct names, defaults
+are correct, and old names produce a usage error rather than silently working.
 """
 
 import re
@@ -35,45 +36,67 @@ def _help(args: list[str]) -> str:
     return _ANSI_RE.sub("", result.output)
 
 
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
+
+
+class TestStorageFlagName:
+    """The flag for persistent volume is --storage (renamed from --persistent-volume)."""
+
+    def test_up_help_uses_storage(self):
+        out = _help(["up"])
+        assert "--storage" in out
+        assert "--persistent-volume" not in out
+
+    def test_pod_create_help_uses_storage(self):
+        out = _help(["pod", "create"])
+        assert "--storage" in out
+        assert "--persistent-volume" not in out
+
+    def test_template_create_help_uses_storage(self):
+        out = _help(["template", "create"])
+        assert "--storage" in out
+        assert "--persistent-volume" not in out
+
+
 class TestUpHelp:
-    def test_advertises_new_flags(self):
+    def test_advertises_flags(self):
         out = _help(["up"])
         assert "--disk" in out
-        assert "--persistent-volume" in out
+        assert "--storage" in out
         assert "--network-volume" in out
 
     def test_old_flag_absent_from_help(self):
         out = _help(["up"])
-        assert "--storage" not in out
+        assert "--persistent-volume" not in out
 
 
 class TestPodCreateHelp:
-    def test_advertises_new_flags(self):
+    def test_advertises_flags(self):
         out = _help(["pod", "create"])
         assert "--disk" in out
-        assert "--persistent-volume" in out
+        assert "--storage" in out
         assert "--network-volume" in out
 
     def test_old_flags_absent_from_help(self):
         out = _help(["pod", "create"])
-        assert "--storage" not in out
+        assert "--persistent-volume" not in out
         assert "--container-disk" not in out
 
 
 class TestTemplateCreateHelp:
-    def test_advertises_new_flags(self):
+    def test_advertises_flags(self):
         out = _help(["template", "create"])
         assert "--disk" in out
-        assert "--persistent-volume" in out
+        assert "--storage" in out
 
     def test_old_flags_absent_from_help(self):
         out = _help(["template", "create"])
-        assert "--storage" not in out
+        assert "--persistent-volume" not in out
         assert "--container-disk" not in out
 
-    def test_persistent_volume_no_longer_required(self):
-        """Previously --storage was required on `rp template create`. After
-        the rename, --persistent-volume defaults to 0GB and is optional —
+    def test_storage_no_longer_required(self):
+        """--storage defaults to 0GB and is optional on `rp template create` —
         verified by the absence of an error when only --gpu/--alias-pattern
         are provided. We invoke with a fake identifier and rely on a
         downstream failure (no API key, etc.) — but typer itself must
@@ -101,8 +124,8 @@ class TestRejectsOldFlags:
     @pytest.mark.parametrize(
         "argv",
         [
-            ["up", "--storage", "100GB"],
-            ["pod", "create", "--storage", "100GB"],
+            ["up", "--persistent-volume", "100GB"],
+            ["pod", "create", "--persistent-volume", "100GB"],
             ["pod", "create", "--container-disk", "100GB"],
             [
                 "template",
@@ -112,7 +135,7 @@ class TestRejectsOldFlags:
                 "{i}",
                 "--gpu",
                 "h100",
-                "--storage",
+                "--persistent-volume",
                 "100GB",
             ],
             [
@@ -136,7 +159,7 @@ class TestRejectsOldFlags:
 
 
 class TestCreatePodFromTemplateOverrides:
-    """`rp up --disk` / `--persistent-volume` need to override template values
+    """`rp up --disk` / `--storage` need to override template values
     via create_pod_from_template's new override params."""
 
     def _template(self) -> PodTemplate:
@@ -189,9 +212,7 @@ class TestCreatePodFromTemplateOverrides:
         kwargs = api.create_pod.call_args.kwargs
         assert kwargs["container_disk_in_gb"] == 250
 
-    def test_persistent_volume_override_takes_precedence_over_template(
-        self, monkeypatch
-    ):
+    def test_storage_override_takes_precedence_over_template(self, monkeypatch):
         pm, api = self._build(monkeypatch)
         pm.create_pod_from_template(
             "t",
