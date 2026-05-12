@@ -303,9 +303,11 @@ class AppConfig(BaseModel):
     ) -> bool:
         """Add or update an alias mapping.
 
-        note / owner_session_id are only set when creating a fresh row.
-        Updating an existing alias preserves the existing values for these
-        fields unless force=True is supplied with new values.
+        When the alias is new, or when force=True is used to overwrite an
+        existing alias with a different pod_id, a fresh PodMetadata row is
+        written using the supplied note/owner_session_id (each defaulting
+        to None when not given — there is no preservation of previous
+        values for these fields).
         """
         existing = self.pod_metadata.get(alias)
         if existing is not None:
