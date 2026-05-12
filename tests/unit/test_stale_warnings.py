@@ -85,3 +85,49 @@ def test_stale_banner_suppressed_by_env(monkeypatch, capsys, temp_config_dir):  
     commands._print_stale_banner_if_any(pm)
     out = capsys.readouterr().out
     assert "old1" not in out
+
+
+def test_prune_destroys_when_user_picks_d(monkeypatch, temp_config_dir):  # noqa: ARG001
+    """rp prune calls destroy on pods the user marks 'd'."""
+    from datetime import datetime, timedelta
+    from unittest.mock import patch
+
+    from rp.cli import commands
+
+    pm = commands.get_pod_manager()
+    pm.add_alias("old1", "p1")
+    pm.add_alias("old2", "p2")
+    now = datetime.now(UTC)
+    pm.config.pod_metadata["old1"].stopped_at = now - timedelta(hours=48)
+    pm.config.pod_metadata["old2"].stopped_at = now - timedelta(hours=48)
+
+    # 'd' for old1, 'k' for old2
+    with (
+        patch.object(commands, "_prune_prompt", side_effect=["d", "k"]),
+        patch.object(pm, "destroy_pod") as destroy,
+    ):
+        commands.prune_command()
+
+    destroy.assert_called_once_with("old1")
+
+
+def test_prune_exits_early_on_q(monkeypatch, temp_config_dir):  # noqa: ARG001
+    from datetime import datetime, timedelta
+    from unittest.mock import patch
+
+    from rp.cli import commands
+
+    pm = commands.get_pod_manager()
+    pm.add_alias("old1", "p1")
+    pm.add_alias("old2", "p2")
+    now = datetime.now(UTC)
+    pm.config.pod_metadata["old1"].stopped_at = now - timedelta(hours=48)
+    pm.config.pod_metadata["old2"].stopped_at = now - timedelta(hours=48)
+
+    with (
+        patch.object(commands, "_prune_prompt", side_effect=["q"]),
+        patch.object(pm, "destroy_pod") as destroy,
+    ):
+        commands.prune_command()
+
+    destroy.assert_not_called()

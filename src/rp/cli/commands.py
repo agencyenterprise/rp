@@ -1508,6 +1508,63 @@ def logs_command(alias: str | None) -> None:
         handle_cli_error(e)
 
 
+def _prune_prompt(alias: str) -> str:
+    """Prompt for a per-pod action in the prune picker. Returns one of: 'd', 'k', 'q'."""
+    while True:
+        answer = typer.prompt(
+            f"  [d] destroy   [k] keep   [q] quit  for {alias}",
+            default="k",
+        )
+        answer = (answer or "k").strip().lower()
+        if answer in {"d", "k", "q"}:
+            return answer
+        console.print("[yellow]Please answer 'd', 'k', or 'q'.[/yellow]")
+
+
+def prune_command() -> None:
+    """Interactively review and destroy stopped pods older than the stale threshold."""
+    try:
+        from rp.cli.utils import format_age
+
+        pod_manager = get_pod_manager()
+        try:
+            threshold = int(os.environ.get("RP_STALE_THRESHOLD_HOURS", "24"))
+        except ValueError:
+            threshold = 24
+
+        stale = pod_manager.stale_stopped_pods(threshold_hours=threshold)
+        if not stale:
+            console.print("✅ No stopped pods over the threshold.")
+            return
+
+        plural = "pods" if len(stale) != 1 else "pod"
+        console.print(f"Stopped {plural} over {threshold}h old ({len(stale)} found):\n")
+
+        for alias, meta in stale:
+            note = meta.note if meta.note else "(none)"
+            assert (
+                meta.stopped_at is not None
+            )  # guaranteed by stale_stopped_pods filter
+            age = format_age(meta.stopped_at)
+            console.print(f"  [bold]{alias}[/bold]   stopped {age}")
+            console.print(f"    note: {note}")
+            choice = _prune_prompt(alias)
+            if choice == "q":
+                console.print("Cancelled.")
+                return
+            if choice == "d":
+                try:
+                    pod_manager.destroy_pod(alias)
+                    console.print(f"  🔥 Destroyed {alias}\n")
+                except Exception as e:
+                    console.print(f"  [red]Failed to destroy {alias}: {e}[/red]\n")
+            else:
+                console.print(f"  ⏭️  Kept {alias}\n")
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
 def note_command(
     alias: str | None,
     text: str | None,

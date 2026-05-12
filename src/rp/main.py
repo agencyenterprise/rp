@@ -24,6 +24,7 @@ from rp.cli.commands import (
     list_command,
     logs_command,
     note_command,
+    prune_command,
     run_command,
     scp_command,
     secrets_inject_command,
@@ -304,6 +305,12 @@ def logs(
 ):
     """Sync and view logs from a remote pod."""
     logs_command(alias)
+
+
+@app.command()
+def prune():
+    """Interactively review and destroy stopped pods past the stale threshold."""
+    prune_command()
 
 
 # ── Pod subcommands (low-level management) ───────────────────────────
