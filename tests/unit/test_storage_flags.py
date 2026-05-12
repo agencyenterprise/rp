@@ -243,3 +243,18 @@ class TestPodCreateRequestDefaults:
             volume_gb=0,
         )
         assert req.container_disk_gb == 20
+
+
+class TestStorageDefaults:
+    """The default per-pod persistent volume is 400GB and the container disk is 50GB."""
+
+    def test_default_templates_use_400gb_storage_and_50gb_disk(self):
+        from rp.core.default_templates import get_default_templates
+
+        for ident, tpl in get_default_templates().items():
+            assert tpl.storage_spec == "400GB", (
+                f"{ident}: expected storage_spec=400GB, got {tpl.storage_spec}"
+            )
+            assert tpl.container_disk_spec == "50GB", (
+                f"{ident}: expected container_disk_spec=50GB, got {tpl.container_disk_spec}"
+            )

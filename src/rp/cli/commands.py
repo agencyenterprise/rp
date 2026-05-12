@@ -237,9 +237,9 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
                 alias = _resolve_default_alias(pod_manager)
 
             gpu_spec = parse_gpu_spec(gpu)
-            volume_gb = parse_storage_spec(storage) if storage is not None else 0
+            volume_gb = parse_storage_spec(storage) if storage is not None else 400
 
-            container_disk_gb = parse_storage_spec(disk) if disk is not None else 500
+            container_disk_gb = parse_storage_spec(disk) if disk is not None else 50
 
             request = PodCreateRequest(
                 alias=alias,
@@ -389,8 +389,8 @@ def up_command(
             request = PodCreateRequest(
                 alias=alias,
                 gpu_spec=gpu_spec,
-                volume_gb=volume_gb if volume_gb is not None else 0,
-                container_disk_gb=disk_gb if disk_gb is not None else 500,
+                volume_gb=volume_gb if volume_gb is not None else 400,
+                container_disk_gb=disk_gb if disk_gb is not None else 50,
                 force=force,
                 network_volume_id=network_volume,
                 note=note,
