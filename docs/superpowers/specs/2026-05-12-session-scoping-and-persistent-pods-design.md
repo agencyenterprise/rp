@@ -154,18 +154,16 @@ Stopped pods over 24h old (3 found):
 
   ast_alex_2   stopped 2d ago, 400 GB, ~$40/mo
     note: AE-1234: fine-tune classifier on cleaned dataset
-    [d] destroy   [k] keep   [s] skip   [q] quit
+    [d] destroy   [k] keep   [q] quit
 
   ast_alex_3   stopped 8d ago, 400 GB, ~$40/mo
     note: (none)
-    [d] destroy   [k] keep   [s] skip   [q] quit
+    [d] destroy   [k] keep   [q] quit
 ```
 
-`destroy` calls `pod_manager.destroy_pod(alias)`. `keep` is "leave it
-alone but don't ask me again for this run" (no state persisted — fresh
-24h+ pods will reappear in the next prune). `skip` is functionally the
-same as `keep` for now but reserved as a future hook for snooze-style
-behavior.
+`destroy` calls `pod_manager.destroy_pod(alias)`. `keep` leaves it alone
+for this run (no state persisted — fresh 24h+ pods will reappear in the
+next prune). `quit` exits the picker early.
 
 ### Layer 3 — Medium session scoping
 
