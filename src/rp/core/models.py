@@ -258,11 +258,23 @@ class PodTemplate(BaseModel):
 
 
 class PodMetadata(BaseModel):
-    """Pod metadata including ID."""
+    """Pod metadata persisted in pods.json."""
 
     pod_id: str = Field(description="RunPod instance ID")
     managed: bool = Field(
         default=False, description="Whether this pod was created with 'rp up'"
+    )
+    owner_session_id: str | None = Field(
+        default=None,
+        description="Session that created this pod (RP_SESSION_ID or CLAUDE_CODE_SESSION_ID at creation). None = unscoped.",
+    )
+    stopped_at: datetime | None = Field(
+        default=None,
+        description="Wall-clock time when the pod was last stopped via rp. Cleared on start. Drives stale-pod warnings.",
+    )
+    note: str | None = Field(
+        default=None,
+        description="Free-form one-line description of what the pod is for (ticket, task). Shown in list/show/prune output.",
     )
 
 
