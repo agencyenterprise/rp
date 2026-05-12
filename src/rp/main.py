@@ -168,15 +168,22 @@ def up(
 def down(
     alias: str = typer.Argument(
         None,
-        help="Pod alias to tear down",
+        help="Pod alias",
         autocompletion=complete_alias,
     ),
     skip_logs: bool = typer.Option(
-        False, "--skip-logs", help="Skip syncing Claude logs before destroying"
+        False, "--skip-logs", help="Skip syncing Claude logs before stopping/destroying"
+    ),
+    destroy: bool = typer.Option(
+        False,
+        "--destroy",
+        help="Permanently terminate the pod instead of stopping. "
+        "Use only when (a) the pod is broken, or (b) all code is committed/pushed "
+        "and all data is on S3 — anything in /workspace will be lost.",
     ),
 ):
-    """Sync logs and destroy a pod (counterpart to 'rp up')."""
-    down_command(alias, skip_logs)
+    """Sync logs and stop a pod (use --destroy to terminate permanently)."""
+    down_command(alias, skip_logs, destroy)
 
 
 @app.command()

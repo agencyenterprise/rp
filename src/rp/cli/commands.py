@@ -516,14 +516,17 @@ def stop_command(alias: str | None) -> None:
         handle_cli_error(e)
 
 
-def down_command(alias: str | None, skip_logs: bool = False) -> None:
-    """Sync logs and destroy a managed pod."""
+def down_command(
+    alias: str | None,
+    skip_logs: bool = False,
+    destroy: bool = False,
+) -> None:
+    """Sync logs then stop (default) or destroy (--destroy) a managed pod."""
     try:
         pod_manager = get_pod_manager()
         alias = select_pod_if_needed(alias, pod_manager)
         pod_id = pod_manager.get_pod_id(alias)
 
-        # Sync logs first (best-effort)
         if not skip_logs:
             try:
                 from rp.core.claude_remote import ClaudeRemote
@@ -535,20 +538,28 @@ def down_command(alias: str | None, skip_logs: bool = False) -> None:
             except Exception as log_err:
                 console.print(f"[yellow]⚠ Could not sync logs: {log_err}[/yellow]")
 
-        # Destroy the pod (force, no confirmation — this is the opinionated path)
-        console.print(f"🔥 Destroying pod '[bold]{alias}[/bold]'…")
-        pod_manager.destroy_pod(alias)
-        console.print(f"✅ Terminated pod [bold]{pod_id}[/bold].")
-
-        # Clean SSH config
         ssh_manager = get_ssh_manager()
-        removed = ssh_manager.remove_host_config(alias)
-        if removed:
-            console.print(f"🧹 Removed SSH config block for '[bold]{alias}[/bold]'")
 
-        console.print(
-            f"🗑️  Removed alias '[bold]{alias}[/bold]' from local configuration."
-        )
+        if destroy:
+            console.print(f"🔥 Destroying pod '[bold]{alias}[/bold]'…")
+            pod_manager.destroy_pod(alias)
+            console.print(f"✅ Terminated pod [bold]{pod_id}[/bold].")
+            removed = ssh_manager.remove_host_config(alias)
+            if removed:
+                console.print(f"🧹 Removed SSH config block for '[bold]{alias}[/bold]'")
+            console.print(
+                f"🗑️  Removed alias '[bold]{alias}[/bold]' from local configuration."
+            )
+        else:
+            console.print(f"🛑 Stopping pod '[bold]{alias}[/bold]'…")
+            pod_manager.stop_pod(alias)
+            console.print(
+                f"✅ Pod stopped. /workspace and alias preserved — "
+                f"resume with [bold]rp pod start {alias}[/bold]."
+            )
+            removed = ssh_manager.remove_host_config(alias)
+            if removed:
+                console.print(f"🧹 Removed SSH config block for '[bold]{alias}[/bold]'")
 
         _auto_clean()
 
