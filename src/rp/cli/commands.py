@@ -5,6 +5,7 @@ This module implements all the CLI commands using the refactored service layer,
 providing clean separation between CLI interface and business logic.
 """
 
+import os
 from pathlib import Path
 
 import typer
@@ -79,6 +80,54 @@ def _auto_clean() -> None:
     except Exception:
         # Silently fail - don't disrupt the user's workflow
         pass
+
+
+def _print_note_reminder_if_needed(alias: str, note: str | None) -> None:
+    """When inside Claude Code and no note was given, print a single-line reminder.
+
+    Suppressed for bare-terminal use to avoid nagging human operators.
+    """
+    if note:
+        return
+    if os.environ.get("CLAUDECODE") != "1":
+        return
+    console.print(
+        f'ℹ️  No note set. Run: [bold]rp pod note {alias} "<ticket-id>: <task>"[/bold]'
+    )
+
+
+def _run_pod_setup(final_alias: str, pod_id: str, note: str | None) -> None:
+    """Run opinionated setup with error handling and note reminder."""
+    try:
+        from rp.core.pod_setup import PodSetup
+
+        console.print("⚙️  Running managed setup…")
+        warn_secret_mismatches()
+        setup = PodSetup(final_alias, pod_id, console)
+        setup.run_full_setup()
+
+        console.print(
+            f"🎉 Managed pod '[bold green]{final_alias}[/bold green]' is ready."
+        )
+        _print_note_reminder_if_needed(final_alias, note)
+    except Exception as setup_err:
+        from rp.utils.errors import RunPodCLIError
+
+        console.print(
+            f"\n[bold yellow]⚠️  Pod created but setup failed:[/bold yellow] "
+            f"{setup_err}",
+        )
+        # RunPodCLIError carries structured `details` (e.g. tail of remote
+        # stderr from SetupScriptError) — surface them so the user has
+        # something to act on instead of just an exit code.
+        if isinstance(setup_err, RunPodCLIError) and setup_err.details:
+            console.print(f"[dim]{setup_err.details}[/dim]")
+        console.print(
+            f"    Pod is running and tracked as '[bold]{final_alias}[/bold]'."
+        )
+        console.print(
+            f"    Run [bold green]rp setup {final_alias}[/bold green] to retry setup."
+        )
 
 
 DEFAULT_ALIAS_TEMPLATE = "{project}_{person}_{i}"
@@ -387,35 +436,7 @@ def up_command(
 
         # Run opinionated setup — if this fails, the pod is still tracked
         # and the user can retry with `rp setup <alias>`
-        try:
-            from rp.core.pod_setup import PodSetup
-
-            console.print("⚙️  Running managed setup…")
-            warn_secret_mismatches()
-            setup = PodSetup(final_alias, pod.id, console)
-            setup.run_full_setup()
-
-            console.print(
-                f"🎉 Managed pod '[bold green]{final_alias}[/bold green]' is ready."
-            )
-        except Exception as setup_err:
-            from rp.utils.errors import RunPodCLIError
-
-            console.print(
-                f"\n[bold yellow]⚠️  Pod created but setup failed:[/bold yellow] "
-                f"{setup_err}",
-            )
-            # RunPodCLIError carries structured `details` (e.g. tail of remote
-            # stderr from SetupScriptError) — surface them so the user has
-            # something to act on instead of just an exit code.
-            if isinstance(setup_err, RunPodCLIError) and setup_err.details:
-                console.print(f"[dim]{setup_err.details}[/dim]")
-            console.print(
-                f"    Pod is running and tracked as '[bold]{final_alias}[/bold]'."
-            )
-            console.print(
-                f"    Run [bold green]rp setup {final_alias}[/bold green] to retry setup."
-            )
+        _run_pod_setup(final_alias, pod.id, note)
 
         _auto_clean()
 

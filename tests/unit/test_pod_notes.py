@@ -35,3 +35,32 @@ def test_pod_manager_note_lifecycle(temp_config_dir):  # noqa: ARG001
 
     pm.clear_note("foo")
     assert pm.get_note("foo") is None
+
+
+def test_note_reminder_in_claude_when_unset(monkeypatch, capsys):
+    """The reminder line is emitted when CLAUDECODE=1 and no note was passed."""
+    from rp.cli.commands import _print_note_reminder_if_needed
+
+    monkeypatch.setenv("CLAUDECODE", "1")
+    _print_note_reminder_if_needed("ast_alex_4", note=None)
+    captured = capsys.readouterr()
+    assert "No note set" in captured.out
+    assert "rp pod note ast_alex_4" in captured.out
+
+
+def test_no_reminder_outside_claude(monkeypatch, capsys):
+    from rp.cli.commands import _print_note_reminder_if_needed
+
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    _print_note_reminder_if_needed("ast_alex_4", note=None)
+    captured = capsys.readouterr()
+    assert "No note set" not in captured.out
+
+
+def test_no_reminder_when_note_provided(monkeypatch, capsys):
+    from rp.cli.commands import _print_note_reminder_if_needed
+
+    monkeypatch.setenv("CLAUDECODE", "1")
+    _print_note_reminder_if_needed("ast_alex_4", note="AE-1234: x")
+    captured = capsys.readouterr()
+    assert "No note set" not in captured.out
