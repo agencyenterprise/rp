@@ -68,6 +68,9 @@ class Pod(BaseModel):
         None,
         description="One-line description (mirrored from PodMetadata for display)",
     )
+    owner_session_id: str | None = Field(
+        None, description="Owning session (mirrored from PodMetadata)"
+    )
 
     @classmethod
     def from_alias_and_id(

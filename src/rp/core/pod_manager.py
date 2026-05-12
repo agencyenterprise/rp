@@ -172,8 +172,10 @@ class PodManager:
             pod = Pod.from_alias_and_id(alias, pod_id, PodStatus.INVALID)
 
         meta = self.config.pod_metadata.get(alias)
-        if meta and meta.note:
-            pod.note = meta.note
+        if meta:
+            if meta.note:
+                pod.note = meta.note
+            pod.owner_session_id = meta.owner_session_id
         return pod
 
     def list_pods(self) -> list[Pod]:
@@ -187,8 +189,10 @@ class PodManager:
                 # Pod is invalid or inaccessible
                 pod = Pod.from_alias_and_id(alias, pod_id, PodStatus.INVALID)
             meta = self.config.pod_metadata.get(alias)
-            if meta and meta.note:
-                pod.note = meta.note
+            if meta:
+                if meta.note:
+                    pod.note = meta.note
+                pod.owner_session_id = meta.owner_session_id
             pods.append(pod)
 
         return sorted(pods, key=lambda p: p.alias)

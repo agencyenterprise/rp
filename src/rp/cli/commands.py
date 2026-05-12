@@ -678,12 +678,34 @@ def untrack_command(alias: str | None, missing_ok: bool = False) -> None:
         handle_cli_error(e)
 
 
-def list_command() -> None:
-    """List all aliases with their status."""
+def list_command(show_all: bool = False) -> None:
+    """List pods, filtered to the current session by default."""
     try:
+        from rp.core.session import current_session_id
+
         pod_manager = get_pod_manager()
         pods = pod_manager.list_pods()
-        display_pods_table(pods)
+
+        session = current_session_id()
+
+        if session is None or show_all:
+            display_pods_table(pods, show_owner_column=(session is None or show_all))
+            return
+
+        owned = [p for p in pods if p.owner_session_id in (session, None)]
+        other_count = sum(
+            1
+            for p in pods
+            if p.owner_session_id is not None and p.owner_session_id != session
+        )
+        display_pods_table(owned)
+        if other_count:
+            plural = "pods" if other_count != 1 else "pod"
+            session_plural = "sessions" if other_count != 1 else "session"
+            console.print(
+                f"\n[dim]+ {other_count} {plural} owned by other "
+                f"{session_plural} — use [bold]rp pod list --all[/bold] to see.[/dim]"
+            )
 
     except Exception as e:
         handle_cli_error(e)

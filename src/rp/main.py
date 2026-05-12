@@ -442,9 +442,15 @@ def untrack(
 
 
 @pod_app.command("list")
-def list_aliases():
+def list_aliases(
+    show_all: bool = typer.Option(
+        False,
+        "--all",
+        help="Show pods from other Claude sessions too (default: current session only)",
+    ),
+):
     """List all pods: alias, ID, status."""
-    list_command()
+    list_command(show_all=show_all)
 
 
 @pod_app.command()
