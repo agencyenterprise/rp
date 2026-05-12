@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -194,6 +195,28 @@ def parse_storage_spec(storage_string: str) -> int:
         raise typer.BadParameter("--storage must be 0GB (no volume) or at least 10GB")
 
     return gb
+
+
+def format_age(when: datetime, *, now: datetime | None = None) -> str:
+    """Render 'how long ago' in compact units: 30m, 2h, 5d."""
+    now = now or datetime.now(UTC)
+    delta = now - when
+    seconds = max(int(delta.total_seconds()), 0)
+    if seconds < 3600:
+        return f"{seconds // 60}m ago"
+    if seconds < 86_400:
+        return f"{seconds // 3600}h ago"
+    return f"{seconds // 86_400}d ago"
+
+
+# RunPod published rate as of 2026-05; revisit if it changes.
+_STORAGE_COST_PER_GB_MONTH = 0.10
+
+
+def format_storage_cost(volume_gb: int) -> str:
+    """Render the monthly cost for a given persistent volume size."""
+    cost = volume_gb * _STORAGE_COST_PER_GB_MONTH
+    return f"~${cost:.0f}/mo"
 
 
 def display_pods_table(

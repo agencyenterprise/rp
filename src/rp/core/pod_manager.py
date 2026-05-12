@@ -8,7 +8,7 @@ including creation, lifecycle management, and status tracking.
 import fcntl
 import json
 from contextlib import contextmanager, suppress
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from rp.config import POD_CONFIG_FILE, ensure_config_dir_exists
@@ -17,6 +17,7 @@ from rp.core.models import (
     AppConfig,
     Pod,
     PodCreateRequest,
+    PodMetadata,
     PodStatus,
     PodTemplate,
 )
@@ -327,6 +328,23 @@ class PodManager:
             self.remove_alias(alias, missing_ok=True)
 
         return len(invalid_aliases)
+
+    def stale_stopped_pods(
+        self,
+        *,
+        threshold_hours: int = 24,
+        now: datetime | None = None,
+    ) -> list[tuple[str, PodMetadata]]:
+        """Return (alias, metadata) for stopped pods whose stopped_at is older than threshold."""
+        now = now or datetime.now(UTC)
+        cutoff = now - timedelta(hours=threshold_hours)
+        out: list[tuple[str, PodMetadata]] = []
+        for alias, meta in self.config.pod_metadata.items():
+            if meta.stopped_at is None:
+                continue
+            if meta.stopped_at <= cutoff:
+                out.append((alias, meta))
+        return sorted(out, key=lambda r: r[1].stopped_at)
 
     def get_network_info(self, alias: str) -> tuple[str, int]:
         """Get IP address and SSH port for a pod."""
