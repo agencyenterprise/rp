@@ -8,6 +8,7 @@ including creation, lifecycle management, and status tracking.
 import fcntl
 import json
 from contextlib import contextmanager, suppress
+from datetime import UTC
 from typing import Any
 
 from rp.config import POD_CONFIG_FILE, ensure_config_dir_exists
@@ -261,7 +262,8 @@ class PodManager:
         return Pod.from_runpod_response(request.alias, pod_data)
 
     def start_pod(self, alias: str) -> Pod:
-        """Start/resume a pod."""
+        """Start/resume a pod and clear stopped_at."""
+
         pod_id = self.get_pod_id(alias)
 
         self.api_client.start_pod(pod_id)
@@ -269,12 +271,24 @@ class PodManager:
         # Wait for pod to be ready (SSH port available)
         pod_data = self.api_client.wait_for_pod_ready(pod_id, timeout=300)
 
+        with self._locked_config() as config:
+            meta = config.pod_metadata.get(alias)
+            if meta is not None:
+                meta.stopped_at = None
+
         return Pod.from_runpod_response(alias, pod_data)
 
     def stop_pod(self, alias: str) -> None:
-        """Stop a pod."""
+        """Stop a pod and record the timestamp."""
+        from datetime import datetime
+
         pod_id = self.get_pod_id(alias)
         self.api_client.stop_pod(pod_id)
+
+        with self._locked_config() as config:
+            meta = config.pod_metadata.get(alias)
+            if meta is not None:
+                meta.stopped_at = datetime.now(UTC)
 
     def destroy_pod(self, alias: str) -> str:
         """Destroy a pod and remove its alias, returning the pod ID."""
