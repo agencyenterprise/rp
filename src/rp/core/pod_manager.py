@@ -165,10 +165,15 @@ class PodManager:
 
         try:
             pod_data = self.api_client.get_pod(pod_id)
-            return Pod.from_runpod_response(alias, pod_data)
+            pod = Pod.from_runpod_response(alias, pod_data)
         except PodError:
             # Pod is invalid but we have the alias mapping
-            return Pod.from_alias_and_id(alias, pod_id, PodStatus.INVALID)
+            pod = Pod.from_alias_and_id(alias, pod_id, PodStatus.INVALID)
+
+        meta = self.config.pod_metadata.get(alias)
+        if meta and meta.note:
+            pod.note = meta.note
+        return pod
 
     def list_pods(self) -> list[Pod]:
         """List all managed pods with their current status."""
@@ -180,6 +185,9 @@ class PodManager:
             except (PodError, Exception):
                 # Pod is invalid or inaccessible
                 pod = Pod.from_alias_and_id(alias, pod_id, PodStatus.INVALID)
+            meta = self.config.pod_metadata.get(alias)
+            if meta and meta.note:
+                pod.note = meta.note
             pods.append(pod)
 
         return sorted(pods, key=lambda p: p.alias)

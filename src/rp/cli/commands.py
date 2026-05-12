@@ -739,6 +739,10 @@ def show_command(alias: str | None) -> None:
             except Exception:
                 pass  # SSH not ready or other connection issue
 
+        # Note
+        if pod.note:
+            console.print(f"[bold]Note:[/bold]      {pod.note}")
+
         console.print("=" * 60 + "\n")
 
     except Exception as e:

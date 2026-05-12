@@ -63,6 +63,12 @@ class Pod(BaseModel):
     cost_per_hour: float | None = Field(None, description="Cost per hour in USD")
     uptime_seconds: int | None = Field(None, description="Total uptime in seconds")
 
+    # Display metadata (mirrored from PodMetadata for convenience)
+    note: str | None = Field(
+        None,
+        description="One-line description (mirrored from PodMetadata for display)",
+    )
+
     @classmethod
     def from_alias_and_id(
         cls, alias: str, pod_id: str, status: PodStatus = PodStatus.INVALID
