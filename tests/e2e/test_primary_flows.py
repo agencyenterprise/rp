@@ -61,8 +61,10 @@ def managed_pod(cli_runner):
     try:
         yield alias
     finally:
-        # Best-effort teardown — the sweep will catch it if this fails.
-        cli_runner(["down", alias, "--skip-logs"])
+        # Destroy, don't just stop — leaving managed pods stopped still
+        # costs storage and clutters the account. The sweep will catch
+        # leaks if this fails.
+        cli_runner(["down", alias, "--skip-logs", "--destroy"])
 
 
 class TestManagedPodFlow:

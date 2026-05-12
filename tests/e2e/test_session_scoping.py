@@ -7,8 +7,8 @@ from .test_pod_lifecycle import _create_pod_with_fallback
 
 class TestSessionScoping:
     def test_list_filters_by_rp_session_id(self, cli_runner, test_pod_manager):  # noqa: ARG002
-        alias_a = f"test-scope-a-{uuid.uuid4().hex[:8]}"
-        alias_b = f"test-scope-b-{uuid.uuid4().hex[:8]}"
+        alias_a = f"test-e2e-scope-a-{uuid.uuid4().hex[:8]}"
+        alias_b = f"test-e2e-scope-b-{uuid.uuid4().hex[:8]}"
 
         try:
             # Create one pod under each "session"

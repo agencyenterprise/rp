@@ -218,16 +218,16 @@ class TestPodManager:
         raise TimeoutError(f"Pod {pod_id} not ready after {timeout}s")
 
     def cleanup_all(self):
-        """Clean up all test pods."""
+        """Destroy all test pods. terminate_pod handles running pods directly,
+        so the previous stop-then-terminate dance just leaked time and
+        sometimes left pods stopped (not destroyed) if the second call
+        raised."""
         for pod_id in self.created_pods[:]:
             try:
-                # Stop first, then terminate
-                runpod.stop_pod(pod_id)
-                time.sleep(5)  # Brief wait before terminating
                 runpod.terminate_pod(pod_id)
                 self.created_pods.remove(pod_id)
             except Exception as e:
-                print(f"Warning: Failed to cleanup pod {pod_id}: {e}")
+                print(f"Warning: Failed to terminate pod {pod_id}: {e}")
 
 
 @pytest.fixture(scope="module")

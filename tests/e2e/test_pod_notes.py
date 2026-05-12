@@ -10,7 +10,7 @@ class TestPodNoteLifecycle:
         # shared_test_pod creates the RunPod via the SDK directly; the alias
         # isn't registered in pods.json yet. Track it under a unique local
         # alias first so the note commands have something to bind to.
-        alias = f"test-note-{uuid.uuid4().hex[:8]}"
+        alias = f"test-e2e-note-{uuid.uuid4().hex[:8]}"
         pod_id = shared_test_pod["pod_id"]
         track = cli_runner(["pod", "track", pod_id, alias])
         assert track.returncode == 0, track.stderr
@@ -51,7 +51,7 @@ class TestPodNoteLifecycle:
 
     def test_up_note_flag_persists(self, cli_runner, test_pod_manager):  # noqa: ARG002
         """rp pod create stores --note-equivalent state when set explicitly via rp pod note."""
-        alias = f"test-up-note-{uuid.uuid4().hex[:8]}"
+        alias = f"test-e2e-up-note-{uuid.uuid4().hex[:8]}"
         try:
             r = _create_pod_with_fallback(cli_runner, alias)
             assert r.returncode == 0, r.stderr

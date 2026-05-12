@@ -19,7 +19,7 @@ class TestRpDownStops:
     def test_rp_down_default_stops_and_preserves_alias(
         self, cli_runner, test_pod_manager
     ):
-        alias = f"test-down-stop-{uuid.uuid4().hex[:8]}"
+        alias = f"test-e2e-down-stop-{uuid.uuid4().hex[:8]}"
         create_result = _create_pod_with_fallback(cli_runner, alias)
         assert create_result.returncode == 0, create_result.stderr
         pod_id = _extract_pod_id(create_result.stdout)
@@ -45,7 +45,7 @@ class TestRpDownStops:
         )
 
     def test_rp_down_destroy_terminates(self, cli_runner, test_pod_manager):  # noqa: ARG002
-        alias = f"test-down-destroy-{uuid.uuid4().hex[:8]}"
+        alias = f"test-e2e-down-destroy-{uuid.uuid4().hex[:8]}"
         create_result = _create_pod_with_fallback(cli_runner, alias)
         assert create_result.returncode == 0, create_result.stderr
         # Do NOT register with test_pod_manager.created_pods — --destroy
