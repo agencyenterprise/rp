@@ -152,9 +152,17 @@ def up(
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite alias if it exists"
     ),
+    note: str = typer.Option(
+        None,
+        "--note",
+        help="One-line description of what this pod is for "
+        "(e.g. 'AE-1234: classifier eval'). Shown in rp pod list and stale-pod warnings.",
+    ),
 ):
     """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
-    up_command(template, alias, gpu, disk, persistent_volume, force, network_volume)
+    up_command(
+        template, alias, gpu, disk, persistent_volume, force, network_volume, note=note
+    )
 
 
 @app.command()
@@ -330,6 +338,12 @@ def create(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show actions without creating"
     ),
+    note: str = typer.Option(
+        None,
+        "--note",
+        help="One-line description of what this pod is for "
+        "(e.g. 'AE-1234: classifier eval'). Shown in rp pod list and stale-pod warnings.",
+    ),
     no_setup: bool = typer.Option(
         False,
         "--no-setup",
@@ -347,6 +361,7 @@ def create(
         force,
         dry_run,
         network_volume,
+        note,
         no_setup,
     )
 

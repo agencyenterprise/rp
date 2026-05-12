@@ -113,6 +113,7 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
     force: bool = False,
     dry_run: bool = False,
     network_volume: str | None = None,
+    note: str | None = None,
     no_setup: bool = False,
 ) -> None:
     """Create a new RunPod using PyTorch 2.8 image."""
@@ -173,6 +174,7 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
                     dry_run,
                     alias_override=alias,
                     network_volume_id=network_volume,
+                    note=note,
                 )
                 progress.update(task, description="Pod created successfully")
 
@@ -203,6 +205,7 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
                 container_disk_gb=container_disk_gb,
                 image=image or PodCreateRequest.model_fields["image"].default,
                 network_volume_id=network_volume,
+                note=note,
             )
 
             # Build storage description
@@ -294,6 +297,7 @@ def up_command(
     persistent_volume: str | None = None,
     force: bool = False,
     network_volume: str | None = None,
+    note: str | None = None,
 ) -> None:
     """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
     try:
@@ -330,6 +334,7 @@ def up_command(
                     network_volume_id=network_volume,
                     container_disk_gb_override=disk_gb,
                     volume_gb_override=volume_gb,
+                    note=note,
                 )
                 progress.update(task, description="Pod created successfully")
             final_alias = pod.alias
@@ -347,6 +352,7 @@ def up_command(
                 container_disk_gb=disk_gb if disk_gb is not None else 500,
                 force=force,
                 network_volume_id=network_volume,
+                note=note,
             )
             console.print(f"🚀 Creating managed pod '[bold]{alias}[/bold]'")
             with Progress(

@@ -86,10 +86,24 @@ class PodManager:
             finally:
                 fcntl.flock(lock_fd, fcntl.LOCK_UN)
 
-    def add_alias(self, alias: str, pod_id: str, force: bool = False) -> None:
+    def add_alias(
+        self,
+        alias: str,
+        pod_id: str,
+        force: bool = False,
+        *,
+        note: str | None = None,
+        owner_session_id: str | None = None,
+    ) -> None:
         """Add or update an alias mapping."""
         with self._locked_config() as config:
-            if not config.add_alias(alias, pod_id, force):
+            if not config.add_alias(
+                alias,
+                pod_id,
+                force,
+                note=note,
+                owner_session_id=owner_session_id,
+            ):
                 raise AliasError.already_exists(alias)
 
     def set_managed(self, alias: str, *, managed: bool) -> None:
@@ -193,8 +207,16 @@ class PodManager:
         pod_id = created["id"]
 
         # Save the alias mapping (locked to prevent concurrent overwrites)
+        from rp.core.session import current_session_id
+
         with self._locked_config() as config:
-            config.add_alias(request.alias, pod_id, force=request.force)
+            config.add_alias(
+                request.alias,
+                pod_id,
+                force=request.force,
+                note=request.note,
+                owner_session_id=current_session_id(),
+            )
 
         # Wait for pod to be ready
         pod_data = self.api_client.wait_for_pod_ready(pod_id)
@@ -402,6 +424,7 @@ class PodManager:
         network_volume_id: str | None = None,
         container_disk_gb_override: int | None = None,
         volume_gb_override: int | None = None,
+        note: str | None = None,
     ) -> Pod:
         """Create a pod using a template, finding the next available alias index or using provided alias."""
         from rp.config import load_template_vars
@@ -453,6 +476,7 @@ class PodManager:
             container_disk_gb=container_disk_gb,
             image=image,
             network_volume_id=nv_id,
+            note=note,
         )
 
         return self.create_pod(request)

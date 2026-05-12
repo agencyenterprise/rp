@@ -196,6 +196,10 @@ class PodCreateRequest(BaseModel):
         default=None,
         description="RunPod network volume ID to attach (overrides volume_gb)",
     )
+    note: str | None = Field(
+        default=None,
+        description="One-line description of what this pod is for",
+    )
 
 
 class PodTemplate(BaseModel):
@@ -288,16 +292,32 @@ class AppConfig(BaseModel):
         default_factory=dict, description="Pod templates by identifier"
     )
 
-    def add_alias(self, alias: str, pod_id: str, force: bool = False) -> bool:
-        """Add or update an alias mapping."""
-        existing_id = self.get_pod_id(alias)
-        if existing_id is not None:
-            if existing_id == pod_id:
-                return True  # Already tracking same pod, idempotent
+    def add_alias(
+        self,
+        alias: str,
+        pod_id: str,
+        force: bool = False,
+        *,
+        note: str | None = None,
+        owner_session_id: str | None = None,
+    ) -> bool:
+        """Add or update an alias mapping.
+
+        note / owner_session_id are only set when creating a fresh row.
+        Updating an existing alias preserves the existing values for these
+        fields unless force=True is supplied with new values.
+        """
+        existing = self.pod_metadata.get(alias)
+        if existing is not None:
+            if existing.pod_id == pod_id:
+                return True
             if not force:
                 return False
-
-        self.pod_metadata[alias] = PodMetadata(pod_id=pod_id)
+        self.pod_metadata[alias] = PodMetadata(
+            pod_id=pod_id,
+            note=note,
+            owner_session_id=owner_session_id,
+        )
         return True
 
     def remove_alias(self, alias: str) -> str | None:
