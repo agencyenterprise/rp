@@ -8,6 +8,7 @@ including creation, lifecycle management, and status tracking.
 import fcntl
 import json
 from contextlib import contextmanager, suppress
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from rp.config import POD_CONFIG_FILE, ensure_config_dir_exists
@@ -16,6 +17,7 @@ from rp.core.models import (
     AppConfig,
     Pod,
     PodCreateRequest,
+    PodMetadata,
     PodStatus,
     PodTemplate,
 )
@@ -86,10 +88,24 @@ class PodManager:
             finally:
                 fcntl.flock(lock_fd, fcntl.LOCK_UN)
 
-    def add_alias(self, alias: str, pod_id: str, force: bool = False) -> None:
+    def add_alias(
+        self,
+        alias: str,
+        pod_id: str,
+        force: bool = False,
+        *,
+        note: str | None = None,
+        owner_session_id: str | None = None,
+    ) -> None:
         """Add or update an alias mapping."""
         with self._locked_config() as config:
-            if not config.add_alias(alias, pod_id, force):
+            if not config.add_alias(
+                alias,
+                pod_id,
+                force,
+                note=note,
+                owner_session_id=owner_session_id,
+            ):
                 raise AliasError.already_exists(alias)
 
     def set_managed(self, alias: str, *, managed: bool) -> None:
@@ -97,6 +113,35 @@ class PodManager:
         with self._locked_config() as config:
             if alias in config.pod_metadata:
                 config.pod_metadata[alias].managed = managed
+
+    def get_note(self, alias: str) -> str | None:
+        """Return the note for an alias, or None if unset."""
+        self.get_pod_id(alias)  # validates alias exists
+        meta = self.config.pod_metadata.get(alias)
+        return meta.note if meta else None
+
+    def set_note(self, alias: str, note: str) -> None:
+        """Replace the note for an alias."""
+        with self._locked_config() as config:
+            meta = config.pod_metadata.get(alias)
+            if meta is None:
+                raise AliasError.not_found(alias, list(config.get_all_aliases()))
+            meta.note = note
+
+    def append_note(self, alias: str, addition: str) -> None:
+        """Append text to an existing note (newline-separated). Creates the note if absent."""
+        with self._locked_config() as config:
+            meta = config.pod_metadata.get(alias)
+            if meta is None:
+                raise AliasError.not_found(alias, list(config.get_all_aliases()))
+            meta.note = f"{meta.note}\n{addition}" if meta.note else addition
+
+    def clear_note(self, alias: str) -> None:
+        with self._locked_config() as config:
+            meta = config.pod_metadata.get(alias)
+            if meta is None:
+                raise AliasError.not_found(alias, list(config.get_all_aliases()))
+            meta.note = None
 
     def remove_alias(self, alias: str, missing_ok: bool = False) -> str:
         """Remove an alias mapping, returning the pod ID."""
@@ -122,10 +167,17 @@ class PodManager:
 
         try:
             pod_data = self.api_client.get_pod(pod_id)
-            return Pod.from_runpod_response(alias, pod_data)
+            pod = Pod.from_runpod_response(alias, pod_data)
         except PodError:
             # Pod is invalid but we have the alias mapping
-            return Pod.from_alias_and_id(alias, pod_id, PodStatus.INVALID)
+            pod = Pod.from_alias_and_id(alias, pod_id, PodStatus.INVALID)
+
+        meta = self.config.pod_metadata.get(alias)
+        if meta:
+            if meta.note:
+                pod.note = meta.note
+            pod.owner_session_id = meta.owner_session_id
+        return pod
 
     def list_pods(self) -> list[Pod]:
         """List all managed pods with their current status."""
@@ -137,6 +189,11 @@ class PodManager:
             except (PodError, Exception):
                 # Pod is invalid or inaccessible
                 pod = Pod.from_alias_and_id(alias, pod_id, PodStatus.INVALID)
+            meta = self.config.pod_metadata.get(alias)
+            if meta:
+                if meta.note:
+                    pod.note = meta.note
+                pod.owner_session_id = meta.owner_session_id
             pods.append(pod)
 
         return sorted(pods, key=lambda p: p.alias)
@@ -193,8 +250,16 @@ class PodManager:
         pod_id = created["id"]
 
         # Save the alias mapping (locked to prevent concurrent overwrites)
+        from rp.core.session import current_session_id
+
         with self._locked_config() as config:
-            config.add_alias(request.alias, pod_id, force=request.force)
+            config.add_alias(
+                request.alias,
+                pod_id,
+                force=request.force,
+                note=request.note,
+                owner_session_id=current_session_id(),
+            )
 
         # Wait for pod to be ready
         pod_data = self.api_client.wait_for_pod_ready(pod_id)
@@ -202,7 +267,8 @@ class PodManager:
         return Pod.from_runpod_response(request.alias, pod_data)
 
     def start_pod(self, alias: str) -> Pod:
-        """Start/resume a pod."""
+        """Start/resume a pod and clear stopped_at."""
+
         pod_id = self.get_pod_id(alias)
 
         self.api_client.start_pod(pod_id)
@@ -210,12 +276,24 @@ class PodManager:
         # Wait for pod to be ready (SSH port available)
         pod_data = self.api_client.wait_for_pod_ready(pod_id, timeout=300)
 
+        with self._locked_config() as config:
+            meta = config.pod_metadata.get(alias)
+            if meta is not None:
+                meta.stopped_at = None
+
         return Pod.from_runpod_response(alias, pod_data)
 
     def stop_pod(self, alias: str) -> None:
-        """Stop a pod."""
+        """Stop a pod and record the timestamp."""
+        from datetime import datetime
+
         pod_id = self.get_pod_id(alias)
         self.api_client.stop_pod(pod_id)
+
+        with self._locked_config() as config:
+            meta = config.pod_metadata.get(alias)
+            if meta is not None:
+                meta.stopped_at = datetime.now(UTC)
 
     def destroy_pod(self, alias: str) -> str:
         """Destroy a pod and remove its alias, returning the pod ID."""
@@ -250,6 +328,23 @@ class PodManager:
             self.remove_alias(alias, missing_ok=True)
 
         return len(invalid_aliases)
+
+    def stale_stopped_pods(
+        self,
+        *,
+        threshold_hours: int = 24,
+        now: datetime | None = None,
+    ) -> list[tuple[str, PodMetadata]]:
+        """Return (alias, metadata) for stopped pods whose stopped_at is older than threshold."""
+        now = now or datetime.now(UTC)
+        cutoff = now - timedelta(hours=threshold_hours)
+        out: list[tuple[str, PodMetadata]] = []
+        for alias, meta in self.config.pod_metadata.items():
+            if meta.stopped_at is None:
+                continue
+            if meta.stopped_at <= cutoff:
+                out.append((alias, meta))
+        return sorted(out, key=lambda r: r[1].stopped_at)
 
     def get_network_info(self, alias: str) -> tuple[str, int]:
         """Get IP address and SSH port for a pod."""
@@ -402,6 +497,7 @@ class PodManager:
         network_volume_id: str | None = None,
         container_disk_gb_override: int | None = None,
         volume_gb_override: int | None = None,
+        note: str | None = None,
     ) -> Pod:
         """Create a pod using a template, finding the next available alias index or using provided alias."""
         from rp.config import load_template_vars
@@ -453,6 +549,7 @@ class PodManager:
             container_disk_gb=container_disk_gb,
             image=image,
             network_volume_id=nv_id,
+            note=note,
         )
 
         return self.create_pod(request)

@@ -63,6 +63,15 @@ class Pod(BaseModel):
     cost_per_hour: float | None = Field(None, description="Cost per hour in USD")
     uptime_seconds: int | None = Field(None, description="Total uptime in seconds")
 
+    # Display metadata (mirrored from PodMetadata for convenience)
+    note: str | None = Field(
+        None,
+        description="One-line description (mirrored from PodMetadata for display)",
+    )
+    owner_session_id: str | None = Field(
+        None, description="Owning session (mirrored from PodMetadata)"
+    )
+
     @classmethod
     def from_alias_and_id(
         cls, alias: str, pod_id: str, status: PodStatus = PodStatus.INVALID
@@ -196,6 +205,10 @@ class PodCreateRequest(BaseModel):
         default=None,
         description="RunPod network volume ID to attach (overrides volume_gb)",
     )
+    note: str | None = Field(
+        default=None,
+        description="One-line description of what this pod is for",
+    )
 
 
 class PodTemplate(BaseModel):
@@ -258,11 +271,23 @@ class PodTemplate(BaseModel):
 
 
 class PodMetadata(BaseModel):
-    """Pod metadata including ID."""
+    """Pod metadata persisted in pods.json."""
 
     pod_id: str = Field(description="RunPod instance ID")
     managed: bool = Field(
         default=False, description="Whether this pod was created with 'rp up'"
+    )
+    owner_session_id: str | None = Field(
+        default=None,
+        description="Session that created this pod (RP_SESSION_ID or CLAUDE_CODE_SESSION_ID at creation). None = unscoped.",
+    )
+    stopped_at: datetime | None = Field(
+        default=None,
+        description="Wall-clock time when the pod was last stopped via rp. Cleared on start. Drives stale-pod warnings.",
+    )
+    note: str | None = Field(
+        default=None,
+        description="Free-form one-line description of what the pod is for (ticket, task). Shown in list/show/prune output.",
     )
 
 
@@ -276,16 +301,34 @@ class AppConfig(BaseModel):
         default_factory=dict, description="Pod templates by identifier"
     )
 
-    def add_alias(self, alias: str, pod_id: str, force: bool = False) -> bool:
-        """Add or update an alias mapping."""
-        existing_id = self.get_pod_id(alias)
-        if existing_id is not None:
-            if existing_id == pod_id:
-                return True  # Already tracking same pod, idempotent
+    def add_alias(
+        self,
+        alias: str,
+        pod_id: str,
+        force: bool = False,
+        *,
+        note: str | None = None,
+        owner_session_id: str | None = None,
+    ) -> bool:
+        """Add or update an alias mapping.
+
+        When the alias is new, or when force=True is used to overwrite an
+        existing alias with a different pod_id, a fresh PodMetadata row is
+        written using the supplied note/owner_session_id (each defaulting
+        to None when not given — there is no preservation of previous
+        values for these fields).
+        """
+        existing = self.pod_metadata.get(alias)
+        if existing is not None:
+            if existing.pod_id == pod_id:
+                return True
             if not force:
                 return False
-
-        self.pod_metadata[alias] = PodMetadata(pod_id=pod_id)
+        self.pod_metadata[alias] = PodMetadata(
+            pod_id=pod_id,
+            note=note,
+            owner_session_id=owner_session_id,
+        )
         return True
 
     def remove_alias(self, alias: str) -> str | None:

@@ -22,7 +22,9 @@ CHEAP_GPUS: tuple[str, ...] = (
 )
 
 
-def _create_pod_with_fallback(cli_runner, alias: str, storage: str = "10GB"):
+def _create_pod_with_fallback(
+    cli_runner, alias: str, storage: str = "10GB", env: dict | None = None
+):
     """Try to create a pod across several cheap GPUs. Returns the last result."""
     last_result = None
     for gpu in CHEAP_GPUS:
@@ -34,10 +36,11 @@ def _create_pod_with_fallback(cli_runner, alias: str, storage: str = "10GB"):
                 alias,
                 "--gpu",
                 gpu,
-                "--persistent-volume",
+                "--storage",
                 storage,
                 "--no-setup",
-            ]
+            ],
+            env=env,
         )
         last_result = result
         if result.returncode == 0:

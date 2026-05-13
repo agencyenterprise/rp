@@ -1,0 +1,133 @@
+"""Tests for stale-pod detection + formatting helpers."""
+
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
+
+import pytest
+
+from rp.cli.utils import format_age, format_storage_cost
+
+
+@pytest.mark.parametrize(
+    "delta,expected_substr",
+    [
+        (timedelta(minutes=30), "30m"),
+        (timedelta(hours=2), "2h"),
+        (timedelta(hours=25), "1d"),
+        (timedelta(days=5, hours=2), "5d"),
+    ],
+)
+def test_format_age(delta, expected_substr):
+    now = datetime(2026, 5, 12, 12, 0, tzinfo=UTC)
+    when = now - delta
+    out = format_age(when, now=now)
+    assert expected_substr in out
+
+
+def test_format_storage_cost_basic():
+    # 400 GB at $0.10/GB/month
+    assert format_storage_cost(400) == "~$40/mo"
+
+
+def test_format_storage_cost_zero():
+    assert format_storage_cost(0) == "~$0/mo"
+
+
+def test_stale_stopped_pods_filters_by_threshold(temp_config_dir):  # noqa: ARG001
+    from rp.core.pod_manager import PodManager
+
+    pm = PodManager(api_client=MagicMock())
+    now = datetime.now(UTC)
+    pm.add_alias("recent", "p1")
+    pm.add_alias("old", "p2")
+    pm.add_alias("running", "p3")
+    pm.config.pod_metadata["recent"].stopped_at = now - timedelta(hours=2)
+    pm.config.pod_metadata["old"].stopped_at = now - timedelta(hours=48)
+    # "running" has stopped_at=None
+
+    stale = pm.stale_stopped_pods(threshold_hours=24, now=now)
+    aliases = {alias for alias, _ in stale}
+    assert aliases == {"old"}
+
+
+def test_stale_banner_emits_when_pods_present(monkeypatch, capsys, temp_config_dir):  # noqa: ARG001
+    from datetime import datetime, timedelta
+
+    from rp.cli import commands
+
+    monkeypatch.delenv("RP_NO_STALE_WARNING", raising=False)
+
+    pm = commands.get_pod_manager()
+    pm.add_alias("old1", "p1", note="AE-1234: classifier")
+    pm.add_alias("old2", "p2")
+    now = datetime.now(UTC)
+    pm.config.pod_metadata["old1"].stopped_at = now - timedelta(hours=48)
+    pm.config.pod_metadata["old2"].stopped_at = now - timedelta(hours=48)
+
+    commands._print_stale_banner_if_any(pm)
+    out = capsys.readouterr().out
+    assert "old1" in out
+    assert "old2" in out
+    assert "AE-1234" in out
+    assert "rp prune" in out
+
+
+def test_stale_banner_suppressed_by_env(monkeypatch, capsys, temp_config_dir):  # noqa: ARG001
+    from datetime import datetime, timedelta
+
+    from rp.cli import commands
+
+    monkeypatch.setenv("RP_NO_STALE_WARNING", "1")
+    pm = commands.get_pod_manager()
+    pm.add_alias("old1", "p1")
+    pm.config.pod_metadata["old1"].stopped_at = datetime.now(UTC) - timedelta(hours=48)
+
+    commands._print_stale_banner_if_any(pm)
+    out = capsys.readouterr().out
+    assert "old1" not in out
+
+
+def test_prune_destroys_when_user_picks_d(monkeypatch, temp_config_dir):  # noqa: ARG001
+    """rp prune calls destroy on pods the user marks 'd'."""
+    from datetime import datetime, timedelta
+    from unittest.mock import patch
+
+    from rp.cli import commands
+
+    pm = commands.get_pod_manager()
+    pm.add_alias("old1", "p1")
+    pm.add_alias("old2", "p2")
+    now = datetime.now(UTC)
+    pm.config.pod_metadata["old1"].stopped_at = now - timedelta(hours=48)
+    pm.config.pod_metadata["old2"].stopped_at = now - timedelta(hours=48)
+
+    # 'd' for old1, 'k' for old2
+    with (
+        patch.object(commands, "_prune_prompt", side_effect=["d", "k"]),
+        patch.object(pm, "destroy_pod") as destroy,
+    ):
+        commands.prune_command()
+
+    destroy.assert_called_once_with("old1")
+
+
+def test_prune_exits_early_on_q(monkeypatch, temp_config_dir):  # noqa: ARG001
+    from datetime import datetime, timedelta
+    from unittest.mock import patch
+
+    from rp.cli import commands
+
+    pm = commands.get_pod_manager()
+    pm.add_alias("old1", "p1")
+    pm.add_alias("old2", "p2")
+    now = datetime.now(UTC)
+    pm.config.pod_metadata["old1"].stopped_at = now - timedelta(hours=48)
+    pm.config.pod_metadata["old2"].stopped_at = now - timedelta(hours=48)
+
+    with (
+        patch.object(commands, "_prune_prompt", side_effect=["q"]),
+        patch.object(pm, "destroy_pod") as destroy,
+    ):
+        commands.prune_command()
+
+    destroy.assert_not_called()

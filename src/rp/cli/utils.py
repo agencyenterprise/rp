@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -196,18 +197,61 @@ def parse_storage_spec(storage_string: str) -> int:
     return gb
 
 
-def display_pods_table(pods: list[Pod]) -> None:
-    """Display a table of pods."""
+def format_age(when: datetime, *, now: datetime | None = None) -> str:
+    """Render 'how long ago' in compact units: 30m, 2h, 5d."""
+    now = now or datetime.now(UTC)
+    delta = now - when
+    seconds = max(int(delta.total_seconds()), 0)
+    if seconds < 3600:
+        return f"{seconds // 60}m ago"
+    if seconds < 86_400:
+        return f"{seconds // 3600}h ago"
+    return f"{seconds // 86_400}d ago"
+
+
+# RunPod published rate as of 2026-05; revisit if it changes.
+_STORAGE_COST_PER_GB_MONTH = 0.10
+
+
+def format_storage_cost(volume_gb: int) -> str:
+    """Render the monthly cost for a given persistent volume size."""
+    cost = volume_gb * _STORAGE_COST_PER_GB_MONTH
+    return f"~${cost:.0f}/mo"
+
+
+def display_pods_table(
+    pods: list[Pod],
+    *,
+    console: "Console | None" = None,
+    show_owner_column: bool = False,
+) -> None:
+    """Display a table of pods.
+
+    console: override the module-level Console (useful in tests).
+    show_owner_column: add an Owner column (truncated session id, for E1 later).
+    A Note column appears automatically when at least one pod has a note set.
+    """
+    import sys
+
+    cons = console if console is not None else sys.modules[__name__].console
+
     if not pods:
-        console.print(
-            "[yellow]No aliases configured. Add one with `rp track <pod_id>` or create one with `rp create`.[/yellow]"
+        cons.print(
+            "[yellow]No aliases configured. Add one with `rp track <pod_id>` "
+            "or create one with `rp create`.[/yellow]"
         )
         return
+
+    any_notes = any(p.note for p in pods)
 
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("Alias", style="green")
     table.add_column("ID", style="magenta")
     table.add_column("Status", style="white")
+    if show_owner_column:
+        table.add_column("Owner", style="cyan")
+    if any_notes:
+        table.add_column("Note", style="white", overflow="fold", max_width=40)
 
     for pod in pods:
         if pod.status == PodStatus.RUNNING:
@@ -218,9 +262,14 @@ def display_pods_table(pods: list[Pod]) -> None:
             status_text = Text("invalid", style="bold red")
 
         row = [pod.alias, pod.id, status_text]
+        if show_owner_column:
+            owner = getattr(pod, "owner_session_id", None)
+            row.append(owner[:8] if owner else "-")
+        if any_notes:
+            row.append(pod.note or "")
         table.add_row(*row)
 
-    console.print(table)
+    cons.print(table)
 
 
 def run_local_command(command_list: list[str], **env_vars) -> None:

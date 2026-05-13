@@ -23,6 +23,8 @@ from rp.cli.commands import (
     gpus_command,
     list_command,
     logs_command,
+    note_command,
+    prune_command,
     run_command,
     scp_command,
     secrets_inject_command,
@@ -137,9 +139,9 @@ def up(
         help="Container disk size, e.g. '500GB' (ephemeral, deleted with the pod). "
         "Overrides the template's container disk; defaults to template value or 500GB.",
     ),
-    persistent_volume: str = typer.Option(
+    storage: str = typer.Option(
         None,
-        "--persistent-volume",
+        "--storage",
         help="Persistent volume size, e.g. '500GB' (mounted at /workspace, survives stop/start). "
         "Overrides the template's volume; defaults to template value or 0GB (no volume).",
     ),
@@ -147,29 +149,47 @@ def up(
         None,
         "--network-volume",
         help="Existing RunPod network volume ID to attach (mounted at /workspace, "
-        "shared across pods). Overrides --persistent-volume.",
+        "shared across pods). Overrides --storage.",
     ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite alias if it exists"
     ),
+    note: str = typer.Option(
+        None,
+        "--note",
+        help="One-line description of what this pod is for "
+        "(e.g. 'AE-1234: classifier eval'). Shown in rp pod list and stale-pod warnings.",
+    ),
 ):
     """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
-    up_command(template, alias, gpu, disk, persistent_volume, force, network_volume)
+    up_command(template, alias, gpu, disk, storage, force, network_volume, note=note)
 
 
 @app.command()
 def down(
     alias: str = typer.Argument(
         None,
-        help="Pod alias to tear down",
+        help="Pod alias",
         autocompletion=complete_alias,
     ),
     skip_logs: bool = typer.Option(
-        False, "--skip-logs", help="Skip syncing Claude logs before destroying"
+        False, "--skip-logs", help="Skip syncing Claude logs before stopping/destroying"
+    ),
+    destroy: bool = typer.Option(
+        False,
+        "--destroy",
+        help="Permanently terminate the pod instead of stopping. "
+        "Use only when (a) the pod is broken, or (b) all code is committed/pushed "
+        "and all data is on S3 — anything in /workspace will be lost.",
+    ),
+    all_sessions: bool = typer.Option(
+        False,
+        "--all-sessions",
+        help="Skip the cross-session confirmation prompt when used with --destroy",
     ),
 ):
-    """Sync logs and destroy a pod (counterpart to 'rp up')."""
-    down_command(alias, skip_logs)
+    """Sync logs and stop a pod (use --destroy to terminate permanently)."""
+    down_command(alias, skip_logs, destroy, all_sessions=all_sessions)
 
 
 @app.command()
@@ -287,6 +307,12 @@ def logs(
     logs_command(alias)
 
 
+@app.command()
+def prune():
+    """Interactively review and destroy stopped pods past the stale threshold."""
+    prune_command()
+
+
 # ── Pod subcommands (low-level management) ───────────────────────────
 
 
@@ -307,9 +333,9 @@ def create(
         help="Container disk size, e.g. '500GB' (ephemeral, deleted with the pod). "
         "Default: 500GB.",
     ),
-    persistent_volume: str = typer.Option(
+    storage: str = typer.Option(
         None,
-        "--persistent-volume",
+        "--storage",
         help="Persistent volume size, e.g. '500GB' (mounted at /workspace, survives stop/start). "
         "Default: 0GB (no volume).",
     ),
@@ -322,13 +348,19 @@ def create(
         None,
         "--network-volume",
         help="Existing RunPod network volume ID to attach (mounted at /workspace, "
-        "shared across pods). Overrides --persistent-volume.",
+        "shared across pods). Overrides --storage.",
     ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite alias if it exists"
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show actions without creating"
+    ),
+    note: str = typer.Option(
+        None,
+        "--note",
+        help="One-line description of what this pod is for "
+        "(e.g. 'AE-1234: classifier eval'). Shown in rp pod list and stale-pod warnings.",
     ),
     no_setup: bool = typer.Option(
         False,
@@ -340,13 +372,14 @@ def create(
     create_command(
         alias,
         gpu,
-        persistent_volume,
+        storage,
         disk,
         template,
         image,
         force,
         dry_run,
         network_volume,
+        note,
         no_setup,
     )
 
@@ -388,9 +421,14 @@ def destroy(
         autocompletion=complete_alias,
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+    all_sessions: bool = typer.Option(
+        False,
+        "--all-sessions",
+        help="Skip the cross-session confirmation prompt",
+    ),
 ):
     """Terminate a pod permanently, remove alias and SSH config."""
-    destroy_command(host_alias, force)
+    destroy_command(host_alias, force, all_sessions=all_sessions)
 
 
 @pod_app.command()
@@ -421,9 +459,15 @@ def untrack(
 
 
 @pod_app.command("list")
-def list_aliases():
+def list_aliases(
+    show_all: bool = typer.Option(
+        False,
+        "--all",
+        help="Show pods from other Claude sessions too (default: current session only)",
+    ),
+):
     """List all pods: alias, ID, status."""
-    list_command()
+    list_command(show_all=show_all)
 
 
 @pod_app.command()
@@ -452,6 +496,26 @@ def gpus(
     gpus_command(filter)
 
 
+@pod_app.command("note")
+def pod_note(
+    alias: str = typer.Argument(None, help="Pod alias", autocompletion=complete_alias),
+    text: str = typer.Argument(None, help="Note text. Omit to print the current note."),
+    append: bool = typer.Option(
+        False, "--append", "-a", help="Append to the existing note instead of replacing"
+    ),
+    clear: bool = typer.Option(False, "--clear", help="Remove the note entirely"),
+):
+    """Set, append to, clear, or print the one-line note attached to a pod.
+
+    Examples:
+        rp pod note my-pod "AE-1234: classifier eval"
+        rp pod note my-pod --append "checkpoint at /workspace/runs/v3"
+        rp pod note my-pod --clear
+        rp pod note my-pod
+    """
+    note_command(alias, text, append=append, clear=clear)
+
+
 # ── Template subcommands ─────────────────────────────────────────────
 
 
@@ -472,9 +536,9 @@ def template_create(
         help="Container disk size, e.g. '500GB' (ephemeral, deleted with the pod). "
         "Default: 500GB.",
     ),
-    persistent_volume: str = typer.Option(
+    storage: str = typer.Option(
         "0GB",
-        "--persistent-volume",
+        "--storage",
         help="Persistent volume size, e.g. '500GB' (mounted at /workspace, survives stop/start). "
         "Default: 0GB (no volume).",
     ),
@@ -487,7 +551,7 @@ def template_create(
         None,
         "--network-volume",
         help="Existing RunPod network volume ID to attach to pods created from this template "
-        "(mounted at /workspace, shared across pods). Overrides --persistent-volume.",
+        "(mounted at /workspace, shared across pods). Overrides --storage.",
     ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite template if it exists"
@@ -498,7 +562,7 @@ def template_create(
         identifier,
         alias_pattern,
         gpu,
-        persistent_volume,
+        storage,
         disk,
         image,
         network_volume,

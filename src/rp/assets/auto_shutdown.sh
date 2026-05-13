@@ -1,7 +1,8 @@
 #!/bin/bash
-# Auto-destroy script for GPU pods.
+# Auto-stop script for GPU pods.
 # Deployed by 'rp up', runs every 5 minutes via cron.
-# Terminates the pod after IDLE_THRESHOLD_MINUTES of all GPUs at 0% utilization.
+# Stops the pod after IDLE_THRESHOLD_MINUTES of all GPUs at 0% utilization.
+# /workspace and the alias are preserved; resume with 'rp pod start <alias>'.
 
 set -euo pipefail
 
@@ -65,16 +66,16 @@ IDLE_MINUTES=$((IDLE_SECONDS / 60))
 echo "$LOG_PREFIX All GPUs idle for ${IDLE_MINUTES} minutes (threshold: ${IDLE_THRESHOLD_MINUTES})."
 
 if [ "$IDLE_MINUTES" -ge "$IDLE_THRESHOLD_MINUTES" ]; then
-    echo "$LOG_PREFIX Idle threshold exceeded. Destroying pod ${RUNPOD_POD_ID}..."
+    echo "$LOG_PREFIX Idle threshold exceeded. Stopping pod ${RUNPOD_POD_ID}..."
 
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-        -X DELETE \
+        -X POST \
         -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
-        "https://rest.runpod.io/v1/pods/${RUNPOD_POD_ID}")
+        "https://rest.runpod.io/v1/pods/${RUNPOD_POD_ID}/stop")
 
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
-        echo "$LOG_PREFIX Pod destroy request sent (HTTP ${HTTP_CODE})."
+        echo "$LOG_PREFIX Pod stop request sent (HTTP ${HTTP_CODE})."
     else
-        echo "$LOG_PREFIX Pod destroy request returned HTTP ${HTTP_CODE}."
+        echo "$LOG_PREFIX Pod stop request returned HTTP ${HTTP_CODE}."
     fi
 fi

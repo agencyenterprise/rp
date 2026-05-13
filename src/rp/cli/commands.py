@@ -5,6 +5,8 @@ This module implements all the CLI commands using the refactored service layer,
 providing clean separation between CLI interface and business logic.
 """
 
+import contextlib
+import os
 from pathlib import Path
 
 import typer
@@ -64,21 +66,137 @@ def get_ssh_manager() -> SSHManager:
     return _ssh_manager
 
 
+def _print_stale_banner_if_any(pod_manager: PodManager) -> None:
+    """Print a one-shot banner about stopped pods accruing storage cost.
+
+    Silent when: env var RP_NO_STALE_WARNING is set, or no pods are
+    stale. Threshold defaults to 24h, override with RP_STALE_THRESHOLD_HOURS.
+    """
+    if os.environ.get("RP_NO_STALE_WARNING"):
+        return
+    try:
+        threshold = int(os.environ.get("RP_STALE_THRESHOLD_HOURS", "24"))
+    except ValueError:
+        threshold = 24
+
+    from rp.cli.utils import format_age
+
+    stale = pod_manager.stale_stopped_pods(threshold_hours=threshold)
+    if not stale:
+        return
+
+    n = len(stale)
+    plural = "pods" if n != 1 else "pod"
+    console.print(f"\n[yellow]⚠ {n} stopped {plural} accruing storage costs:[/yellow]")
+    for alias, meta in stale:
+        note_blurb = meta.note if meta.note else "(none)"
+        assert meta.stopped_at is not None  # guaranteed by stale_stopped_pods filter
+        age = format_age(meta.stopped_at)
+        console.print(f"    [bold]{alias}[/bold]   stopped {age}   note: {note_blurb}")
+    console.print(
+        "  Review: [bold]rp prune[/bold]   "
+        "Destroy now: [bold]rp down <alias> --destroy[/bold]\n"
+    )
+
+
 def _auto_clean() -> None:
-    """Silently perform cleanup tasks (invalid aliases, SSH blocks)."""
+    """Silent post-command sweep: invalid aliases, orphan SSH blocks, plus stale-pod banner."""
     try:
         pod_manager = get_pod_manager()
         ssh_manager = get_ssh_manager()
 
-        # Clean invalid aliases
         pod_manager.clean_invalid_aliases()
-
-        # Prune SSH blocks
         valid_aliases = set(pod_manager.aliases.keys())
         ssh_manager.prune_managed_blocks(valid_aliases)
     except Exception:
-        # Silently fail - don't disrupt the user's workflow
         pass
+
+    # Separate suppress so a sweep failure doesn't swallow real command output silently.
+    with contextlib.suppress(Exception):
+        _print_stale_banner_if_any(get_pod_manager())
+
+
+def _confirm_cross_session_or_exit(
+    pod_manager: PodManager,
+    alias: str,
+    *,
+    all_sessions: bool,
+) -> None:
+    """Prompt before acting on a pod owned by another session. typer.Exit on no.
+
+    No-op when: no session is active, --all-sessions was passed, the pod is
+    owned by us, or the pod has no owner (legacy / pre-feature pod).
+    """
+    if all_sessions:
+        return
+    from rp.core.session import current_session_id
+
+    session = current_session_id()
+    if session is None:
+        return
+    meta = pod_manager.config.pod_metadata.get(alias)
+    if meta is None or meta.owner_session_id is None:
+        return
+    if meta.owner_session_id == session:
+        return
+
+    note_blurb = f', note: "{meta.note}"' if meta.note else ""
+    response = typer.confirm(
+        f"⚠ Pod '{alias}' belongs to another Claude session"
+        f" (owner {meta.owner_session_id[:8]}…{note_blurb})\n"
+        f"Destroy anyway?"
+    )
+    if not response:
+        console.print("❌ Cancelled.")
+        raise typer.Exit(0)
+
+
+def _print_note_reminder_if_needed(alias: str, note: str | None) -> None:
+    """When inside Claude Code and no note was given, print a single-line reminder.
+
+    Suppressed for bare-terminal use to avoid nagging human operators.
+    """
+    if note:
+        return
+    if os.environ.get("CLAUDECODE") != "1":
+        return
+    console.print(
+        f'ℹ️  No note set. Run: [bold]rp pod note {alias} "<ticket-id>: <task>"[/bold]'
+    )
+
+
+def _run_pod_setup(final_alias: str, pod_id: str, note: str | None) -> None:
+    """Run opinionated setup with error handling and note reminder."""
+    try:
+        from rp.core.pod_setup import PodSetup
+
+        console.print("⚙️  Running managed setup…")
+        warn_secret_mismatches()
+        setup = PodSetup(final_alias, pod_id, console)
+        setup.run_full_setup()
+
+        console.print(
+            f"🎉 Managed pod '[bold green]{final_alias}[/bold green]' is ready."
+        )
+        _print_note_reminder_if_needed(final_alias, note)
+    except Exception as setup_err:
+        from rp.utils.errors import RunPodCLIError
+
+        console.print(
+            f"\n[bold yellow]⚠️  Pod created but setup failed:[/bold yellow] "
+            f"{setup_err}",
+        )
+        # RunPodCLIError carries structured `details` (e.g. tail of remote
+        # stderr from SetupScriptError) — surface them so the user has
+        # something to act on instead of just an exit code.
+        if isinstance(setup_err, RunPodCLIError) and setup_err.details:
+            console.print(f"[dim]{setup_err.details}[/dim]")
+        console.print(
+            f"    Pod is running and tracked as '[bold]{final_alias}[/bold]'."
+        )
+        console.print(
+            f"    Run [bold green]rp setup {final_alias}[/bold green] to retry setup."
+        )
 
 
 DEFAULT_ALIAS_TEMPLATE = "{project}_{person}_{i}"
@@ -106,13 +224,14 @@ def _resolve_default_alias(pod_manager: PodManager) -> str:
 def create_command(  # noqa: PLR0915  # Function complexity acceptable for main command
     alias: str | None = None,
     gpu: str | None = None,
-    persistent_volume: str | None = None,
+    storage: str | None = None,
     disk: str | None = None,
     template: str | None = None,
     image: str | None = None,
     force: bool = False,
     dry_run: bool = False,
     network_volume: str | None = None,
+    note: str | None = None,
     no_setup: bool = False,
 ) -> None:
     """Create a new RunPod using PyTorch 2.8 image."""
@@ -173,6 +292,7 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
                     dry_run,
                     alias_override=alias,
                     network_volume_id=network_volume,
+                    note=note,
                 )
                 progress.update(task, description="Pod created successfully")
 
@@ -186,13 +306,9 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
                 alias = _resolve_default_alias(pod_manager)
 
             gpu_spec = parse_gpu_spec(gpu)
-            volume_gb = (
-                parse_storage_spec(persistent_volume)
-                if persistent_volume is not None
-                else 0
-            )
+            volume_gb = parse_storage_spec(storage) if storage is not None else 400
 
-            container_disk_gb = parse_storage_spec(disk) if disk is not None else 500
+            container_disk_gb = parse_storage_spec(disk) if disk is not None else 50
 
             request = PodCreateRequest(
                 alias=alias,
@@ -203,6 +319,7 @@ def create_command(  # noqa: PLR0915  # Function complexity acceptable for main 
                 container_disk_gb=container_disk_gb,
                 image=image or PodCreateRequest.model_fields["image"].default,
                 network_volume_id=network_volume,
+                note=note,
             )
 
             # Build storage description
@@ -291,9 +408,10 @@ def up_command(
     alias: str | None = None,
     gpu: str | None = None,
     disk: str | None = None,
-    persistent_volume: str | None = None,
+    storage: str | None = None,
     force: bool = False,
     network_volume: str | None = None,
+    note: str | None = None,
 ) -> None:
     """Create a pod with full opinionated setup (tools, secrets, auto-shutdown)."""
     try:
@@ -303,11 +421,7 @@ def up_command(
             raise ValueError("Must specify either a template or --gpu")
 
         disk_gb = parse_storage_spec(disk) if disk is not None else None
-        volume_gb = (
-            parse_storage_spec(persistent_volume)
-            if persistent_volume is not None
-            else None
-        )
+        volume_gb = parse_storage_spec(storage) if storage is not None else None
 
         # Create the pod using existing create logic
         if template:
@@ -330,6 +444,7 @@ def up_command(
                     network_volume_id=network_volume,
                     container_disk_gb_override=disk_gb,
                     volume_gb_override=volume_gb,
+                    note=note,
                 )
                 progress.update(task, description="Pod created successfully")
             final_alias = pod.alias
@@ -343,10 +458,11 @@ def up_command(
             request = PodCreateRequest(
                 alias=alias,
                 gpu_spec=gpu_spec,
-                volume_gb=volume_gb if volume_gb is not None else 0,
-                container_disk_gb=disk_gb if disk_gb is not None else 500,
+                volume_gb=volume_gb if volume_gb is not None else 400,
+                container_disk_gb=disk_gb if disk_gb is not None else 50,
                 force=force,
                 network_volume_id=network_volume,
+                note=note,
             )
             console.print(f"🚀 Creating managed pod '[bold]{alias}[/bold]'")
             with Progress(
@@ -381,35 +497,7 @@ def up_command(
 
         # Run opinionated setup — if this fails, the pod is still tracked
         # and the user can retry with `rp setup <alias>`
-        try:
-            from rp.core.pod_setup import PodSetup
-
-            console.print("⚙️  Running managed setup…")
-            warn_secret_mismatches()
-            setup = PodSetup(final_alias, pod.id, console)
-            setup.run_full_setup()
-
-            console.print(
-                f"🎉 Managed pod '[bold green]{final_alias}[/bold green]' is ready."
-            )
-        except Exception as setup_err:
-            from rp.utils.errors import RunPodCLIError
-
-            console.print(
-                f"\n[bold yellow]⚠️  Pod created but setup failed:[/bold yellow] "
-                f"{setup_err}",
-            )
-            # RunPodCLIError carries structured `details` (e.g. tail of remote
-            # stderr from SetupScriptError) — surface them so the user has
-            # something to act on instead of just an exit code.
-            if isinstance(setup_err, RunPodCLIError) and setup_err.details:
-                console.print(f"[dim]{setup_err.details}[/dim]")
-            console.print(
-                f"    Pod is running and tracked as '[bold]{final_alias}[/bold]'."
-            )
-            console.print(
-                f"    Run [bold green]rp setup {final_alias}[/bold green] to retry setup."
-            )
+        _run_pod_setup(final_alias, pod.id, note)
 
         _auto_clean()
 
@@ -497,14 +585,23 @@ def stop_command(alias: str | None) -> None:
         handle_cli_error(e)
 
 
-def down_command(alias: str | None, skip_logs: bool = False) -> None:
-    """Sync logs and destroy a managed pod."""
+def down_command(
+    alias: str | None,
+    skip_logs: bool = False,
+    destroy: bool = False,
+    all_sessions: bool = False,
+) -> None:
+    """Sync logs then stop (default) or destroy (--destroy) a managed pod."""
     try:
         pod_manager = get_pod_manager()
         alias = select_pod_if_needed(alias, pod_manager)
         pod_id = pod_manager.get_pod_id(alias)
 
-        # Sync logs first (best-effort)
+        if destroy:
+            _confirm_cross_session_or_exit(
+                pod_manager, alias, all_sessions=all_sessions
+            )
+
         if not skip_logs:
             try:
                 from rp.core.claude_remote import ClaudeRemote
@@ -516,28 +613,43 @@ def down_command(alias: str | None, skip_logs: bool = False) -> None:
             except Exception as log_err:
                 console.print(f"[yellow]⚠ Could not sync logs: {log_err}[/yellow]")
 
-        # Destroy the pod (force, no confirmation — this is the opinionated path)
-        console.print(f"🔥 Destroying pod '[bold]{alias}[/bold]'…")
-        pod_manager.destroy_pod(alias)
-        console.print(f"✅ Terminated pod [bold]{pod_id}[/bold].")
-
-        # Clean SSH config
         ssh_manager = get_ssh_manager()
-        removed = ssh_manager.remove_host_config(alias)
-        if removed:
-            console.print(f"🧹 Removed SSH config block for '[bold]{alias}[/bold]'")
 
-        console.print(
-            f"🗑️  Removed alias '[bold]{alias}[/bold]' from local configuration."
-        )
+        if destroy:
+            console.print(f"🔥 Destroying pod '[bold]{alias}[/bold]'…")
+            pod_manager.destroy_pod(alias)
+            console.print(f"✅ Terminated pod [bold]{pod_id}[/bold].")
+            removed = ssh_manager.remove_host_config(alias)
+            if removed:
+                console.print(f"🧹 Removed SSH config block for '[bold]{alias}[/bold]'")
+            console.print(
+                f"🗑️  Removed alias '[bold]{alias}[/bold]' from local configuration."
+            )
+        else:
+            console.print(f"🛑 Stopping pod '[bold]{alias}[/bold]'…")
+            pod_manager.stop_pod(alias)
+            console.print(
+                f"✅ Pod stopped. /workspace and alias preserved — "
+                f"resume with [bold]rp pod start {alias}[/bold]."
+            )
+            removed = ssh_manager.remove_host_config(alias)
+            if removed:
+                console.print(f"🧹 Removed SSH config block for '[bold]{alias}[/bold]'")
 
         _auto_clean()
 
+    except typer.Exit as e:
+        if e.exit_code != 0:
+            raise
     except Exception as e:
         handle_cli_error(e)
 
 
-def destroy_command(alias: str | None, force: bool = False) -> None:
+def destroy_command(
+    alias: str | None,
+    force: bool = False,
+    all_sessions: bool = False,
+) -> None:
     """Terminate a pod, remove SSH config, and delete the alias."""
     try:
         pod_manager = get_pod_manager()
@@ -546,6 +658,8 @@ def destroy_command(alias: str | None, force: bool = False) -> None:
         # mistake surfaces as "Unknown host alias" instead of a generic
         # error after the destructive y/N prompt.
         pod_manager.get_pod_id(alias)
+
+        _confirm_cross_session_or_exit(pod_manager, alias, all_sessions=all_sessions)
 
         # Confirm destruction unless force is set
         if not force:
@@ -573,6 +687,10 @@ def destroy_command(alias: str | None, force: bool = False) -> None:
         # Auto-clean invalid aliases and completed tasks
         _auto_clean()
 
+    except typer.Exit as e:
+        if e.exit_code != 0:
+            raise
+        # exit_code == 0 means the user cancelled — return cleanly
     except Exception as e:
         handle_cli_error(e)
 
@@ -648,12 +766,34 @@ def untrack_command(alias: str | None, missing_ok: bool = False) -> None:
         handle_cli_error(e)
 
 
-def list_command() -> None:
-    """List all aliases with their status."""
+def list_command(show_all: bool = False) -> None:
+    """List pods, filtered to the current session by default."""
     try:
+        from rp.core.session import current_session_id
+
         pod_manager = get_pod_manager()
         pods = pod_manager.list_pods()
-        display_pods_table(pods)
+
+        session = current_session_id()
+
+        if session is None or show_all:
+            display_pods_table(pods, show_owner_column=(session is None or show_all))
+            return
+
+        owned = [p for p in pods if p.owner_session_id in (session, None)]
+        other_count = sum(
+            1
+            for p in pods
+            if p.owner_session_id is not None and p.owner_session_id != session
+        )
+        display_pods_table(owned)
+        if other_count:
+            plural = "pods" if other_count != 1 else "pod"
+            session_plural = "sessions" if other_count != 1 else "session"
+            console.print(
+                f"\n[dim]+ {other_count} {plural} owned by other "
+                f"{session_plural} — use [bold]rp pod list --all[/bold] to see.[/dim]"
+            )
 
     except Exception as e:
         handle_cli_error(e)
@@ -733,6 +873,10 @@ def show_command(alias: str | None) -> None:
             except Exception:
                 pass  # SSH not ready or other connection issue
 
+        # Note
+        if pod.note:
+            console.print(f"[bold]Note:[/bold]      {pod.note}")
+
         console.print("=" * 60 + "\n")
 
     except Exception as e:
@@ -772,7 +916,7 @@ def template_create_command(
     identifier: str,
     alias_template: str,
     gpu: str,
-    persistent_volume: str = "0GB",
+    storage: str = "0GB",
     disk: str = "500GB",
     image: str | None = None,
     network_volume: str | None = None,
@@ -784,7 +928,7 @@ def template_create_command(
             "identifier": identifier,
             "alias_template": alias_template,
             "gpu_spec": gpu,
-            "storage_spec": persistent_volume,
+            "storage_spec": storage,
             "container_disk_spec": disk,
         }
 
@@ -803,7 +947,7 @@ def template_create_command(
         console.print(f"   Alias template: {alias_template}")
         console.print(f"   GPU: {gpu}")
         console.print(f"   Disk: {disk}")
-        console.print(f"   Persistent volume: {persistent_volume}")
+        console.print(f"   Persistent volume: {storage}")
         if image is not None:
             console.print(f"   Image: {image}")
         if network_volume is not None:
@@ -1359,6 +1503,99 @@ def logs_command(alias: str | None) -> None:
         remote = ClaudeRemote(alias, pod_id, console)
         local_dir = remote.sync_logs()
         console.print(f"✅ Logs synced to [bold]{local_dir}[/bold]")
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
+def _prune_prompt(alias: str) -> str:
+    """Prompt for a per-pod action in the prune picker. Returns one of: 'd', 'k', 'q'."""
+    while True:
+        answer = typer.prompt(
+            f"  [d] destroy   [k] keep   [q] quit  for {alias}",
+            default="k",
+        )
+        answer = (answer or "k").strip().lower()
+        if answer in {"d", "k", "q"}:
+            return answer
+        console.print("[yellow]Please answer 'd', 'k', or 'q'.[/yellow]")
+
+
+def prune_command() -> None:
+    """Interactively review and destroy stopped pods older than the stale threshold."""
+    try:
+        from rp.cli.utils import format_age
+
+        pod_manager = get_pod_manager()
+        try:
+            threshold = int(os.environ.get("RP_STALE_THRESHOLD_HOURS", "24"))
+        except ValueError:
+            threshold = 24
+
+        stale = pod_manager.stale_stopped_pods(threshold_hours=threshold)
+        if not stale:
+            console.print("✅ No stopped pods over the threshold.")
+            return
+
+        plural = "pods" if len(stale) != 1 else "pod"
+        console.print(f"Stopped {plural} over {threshold}h old ({len(stale)} found):\n")
+
+        for alias, meta in stale:
+            note = meta.note if meta.note else "(none)"
+            assert (
+                meta.stopped_at is not None
+            )  # guaranteed by stale_stopped_pods filter
+            age = format_age(meta.stopped_at)
+            console.print(f"  [bold]{alias}[/bold]   stopped {age}")
+            console.print(f"    note: {note}")
+            choice = _prune_prompt(alias)
+            if choice == "q":
+                console.print("Cancelled.")
+                return
+            if choice == "d":
+                try:
+                    pod_manager.destroy_pod(alias)
+                    console.print(f"  🔥 Destroyed {alias}\n")
+                except Exception as e:
+                    console.print(f"  [red]Failed to destroy {alias}: {e}[/red]\n")
+            else:
+                console.print(f"  ⏭️  Kept {alias}\n")
+
+    except Exception as e:
+        handle_cli_error(e)
+
+
+def note_command(
+    alias: str | None,
+    text: str | None,
+    *,
+    append: bool = False,
+    clear: bool = False,
+) -> None:
+    """Set / append / clear / show a pod's note."""
+    try:
+        pod_manager = get_pod_manager()
+        alias = select_pod_if_needed(alias, pod_manager)
+
+        if clear:
+            pod_manager.clear_note(alias)
+            console.print(f"🗑️  Cleared note for '[bold]{alias}[/bold]'")
+            return
+
+        if text is None:
+            current = pod_manager.get_note(alias)
+            if current:
+                console.print(current)
+            else:
+                console.print(f"[dim](no note set for {alias})[/dim]")
+            return
+
+        if append:
+            pod_manager.append_note(alias, text)
+            console.print(f"✏️  Appended to note for '[bold]{alias}[/bold]'")
+        else:
+            pod_manager.set_note(alias, text)
+            console.print(f"✏️  Set note for '[bold]{alias}[/bold]'")
 
     except Exception as e:
         handle_cli_error(e)

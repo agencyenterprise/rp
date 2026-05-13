@@ -21,8 +21,8 @@ After each command, `rp` checks GitHub for a newer version and prints a one-line
 # Store your API key in macOS Keychain
 rp secrets set RUNPOD_API_KEY
 
-# Create a fully configured pod (tools, secrets, auto-shutdown)
-rp up h100
+# Create a fully configured pod (tools, secrets, auto-shutdown, 400GB /workspace)
+rp up h100 --note "AE-1234: classifier eval"
 
 # Run commands on it
 rp run h100-1 -- nvidia-smi
@@ -33,8 +33,11 @@ rp claude h100-1 -p "Run the training script in /workspace/project"
 # Check progress
 rp status h100-1
 
-# Sync logs and destroy when done
+# Sync logs and stop when done (alias kept; resume with rp pod start)
 rp down h100-1
+
+# Terminate permanently when all data is saved elsewhere
+rp down h100-1 --destroy
 ```
 
 ## Commands
@@ -43,11 +46,12 @@ rp down h100-1
 
 | Command | Description |
 |---|---|
-| `rp up [template] [--gpu SPEC] [--disk SIZE] [--persistent-volume SIZE] [--alias NAME] [--network-volume ID]` | Create pod + install tools + inject secrets + deploy auto-shutdown |
+| `rp up [template] [--gpu SPEC] [--disk SIZE] [--storage SIZE] [--alias NAME] [--network-volume ID] [--note TEXT]` | Create pod + install tools + inject secrets + deploy auto-shutdown |
 | `rp claude <alias> [-p PROMPT] [-d DIR]` | Launch Claude in tmux on pod (autonomous or interactive) |
 | `rp status <alias>` | Check remote Claude progress and read report |
 | `rp logs <alias>` | Sync remote Claude logs locally |
-| `rp down <alias> [--skip-logs]` | Sync logs and destroy a pod (counterpart to `rp up`) |
+| `rp down <alias> [--skip-logs] [--destroy]` | Sync logs and stop a pod (use `--destroy` to terminate permanently) |
+| `rp prune` | Interactively review and destroy stale stopped pods |
 | `rp setup <alias>` | Re-run pod setup (recovery from partial failures) |
 | `rp secrets list\|set\|remove\|inject` | Manage secrets in macOS Keychain; `inject` pushes to a running pod |
 
@@ -64,20 +68,21 @@ rp down h100-1
 
 | Command | Description |
 |---|---|
-| `rp pod create [template] [--gpu] [--disk SIZE] [--persistent-volume SIZE] [--alias]` | Create bare pod, run setup.sh |
+| `rp pod create [template] [--gpu] [--disk SIZE] [--storage SIZE] [--alias] [--note TEXT]` | Create bare pod, run setup.sh |
 | `rp pod start <alias>` | Resume stopped pod (re-injects secrets for managed pods) |
 | `rp pod stop <alias>` | Stop pod |
-| `rp pod destroy <alias> [-f]` | Terminate pod permanently |
+| `rp pod destroy <alias> [-f] [--all-sessions]` | Terminate pod permanently |
 | `rp pod track <pod_id_or_name> [alias]` | Track existing pod by ID or name |
 | `rp pod untrack <alias>` | Stop tracking (doesn't terminate) |
-| `rp pod list` | List all pods with status |
+| `rp pod list [--all]` | List pods (current session by default; `--all` shows all sessions) |
 | `rp pod show <alias>` | Detailed pod info |
+| `rp pod note <alias> [TEXT] [--append] [--clear]` | Set/append/clear/show the pod's note |
 | `rp pod clean` | Remove invalid aliases and orphaned SSH config |
 | `rp pod gpus [-f FILTER]` | List available GPU types (e.g. `-f 'vram>=80'`) |
 
 ### Templates
 
-Built-in: `h100`, `2h100`, `4h100`, `8h100`, `h200`, `2h200`, `4h200`, `8h200`, `b200`, `2b200`, `4b200`, `8b200`, `5090`, `a40` (all 500GB container disk, no volume, using `{project}_{person}_{i}` naming).
+Built-in: `h100`, `2h100`, `4h100`, `8h100`, `h200`, `2h200`, `4h200`, `8h200`, `b200`, `2b200`, `4b200`, `8b200`, `5090`, `a40` (all 400GB persistent volume, 50GB container disk, using `{project}_{person}_{i}` naming).
 
 ```bash
 # Set naming variables in .rp_settings.json (or ~/.rp_settings.json for global)
@@ -89,7 +94,7 @@ rp pod create h100      # creates ast_alex_1, ast_alex_2, etc.
 RP_PROJECT=other rp pod create h100   # creates other_alex_1
 
 # Custom templates
-rp template create ml --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --persistent-volume 1TB
+rp template create ml --alias-pattern "{project}_{person}_{i}" --gpu 2xA100 --storage 1TB
 rp template list
 rp template delete ml
 ```

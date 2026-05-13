@@ -168,10 +168,17 @@ class PodSetup:
 cp {ENV_FILE_ROOT} {ENV_FILE_USER} 2>/dev/null || true
 chown user:user {ENV_FILE_USER} 2>/dev/null || true
 
+# Ensure workspace cache dir exists for the rp-managed env exports below
+mkdir -p /workspace/.cache
+
 # Ensure /etc/profile.d sourcing hook exists (for login shells)
 if [ ! -f /etc/profile.d/rp-env.sh ]; then
     cat > /etc/profile.d/rp-env.sh << 'PROFILED'
 export PATH="$HOME/.local/bin:$PATH"
+export XDG_CACHE_HOME=/workspace/.cache
+export UV_CACHE_DIR=/workspace/.cache/uv
+export PIP_CACHE_DIR=/workspace/.cache/pip
+export HF_HOME=/workspace/.cache/huggingface
 [ -f "$HOME/.rp-env" ] && source "$HOME/.rp-env"
 PROFILED
     chmod 644 /etc/profile.d/rp-env.sh
@@ -500,9 +507,15 @@ pgrep -x cron >/dev/null 2>&1 || {
     dpkg -s cron >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq cron > /dev/null 2>&1)
     service cron start 2>/dev/null || cron 2>/dev/null || true
 }
+# Ensure workspace cache dir exists for the rp-managed env exports below
+mkdir -p /workspace/.cache
 # Environment sourcing
 cat > /etc/profile.d/rp-env.sh << 'PROFILED'
 export PATH="$HOME/.local/bin:$PATH"
+export XDG_CACHE_HOME=/workspace/.cache
+export UV_CACHE_DIR=/workspace/.cache/uv
+export PIP_CACHE_DIR=/workspace/.cache/pip
+export HF_HOME=/workspace/.cache/huggingface
 [ -f "$HOME/.rp-env" ] && source "$HOME/.rp-env"
 PROFILED
 chmod 644 /etc/profile.d/rp-env.sh

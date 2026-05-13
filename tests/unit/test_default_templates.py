@@ -66,9 +66,9 @@ class TestDefaultsApplied:
         for ident, t in templates.items():
             assert t.image == DEFAULT_IMAGE, ident
 
-    def test_all_use_zero_volume(self, templates: dict[str, PodTemplate]):
+    def test_all_use_400gb_volume(self, templates: dict[str, PodTemplate]):
         for ident, t in templates.items():
-            assert parse_storage_spec(t.storage_spec) == 0, ident
+            assert parse_storage_spec(t.storage_spec) == 400, ident
 
     def test_all_use_default_container_disk(self, templates: dict[str, PodTemplate]):
         expected = parse_storage_spec(DEFAULT_CONTAINER_DISK)

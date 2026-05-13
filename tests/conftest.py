@@ -28,7 +28,7 @@ def setup_runpod_api():
 
     if not api_key:
         msg = "RUNPOD_API_KEY not found. Set env var or store in ~/.config/rp/runpod_api_key"
-        pytest.skip(msg)  # ty: ignore[too-many-positional-arguments]
+        pytest.skip(msg)
 
     runpod.api_key = api_key
     return api_key
@@ -41,16 +41,19 @@ def temp_config_dir():
         original_config_dir = CONFIG_DIR
         # Patch the config module to use temp directory
         from rp import config
+        from rp.cli import commands as cli_commands
         from rp.cli import utils as cli_utils
+        from rp.core import pod_manager as pod_manager_mod
 
         config.CONFIG_DIR = Path(temp_dir) / "rp"
         config.POD_CONFIG_FILE = config.CONFIG_DIR / "pods.json"
         config.API_KEY_FILE = config.CONFIG_DIR / "runpod_api_key"
         config.SETUP_FILE = config.CONFIG_DIR / "setup.sh"
-        # Modules that did `from rp.config import SETUP_FILE` bound the
-        # original path at import time; redirect their references too.
+        # Modules that did `from rp.config import X` bound the original path
+        # at import time; redirect their references too.
         cli_utils.SETUP_FILE = config.SETUP_FILE
         cli_utils.API_KEY_FILE = config.API_KEY_FILE
+        pod_manager_mod.POD_CONFIG_FILE = config.POD_CONFIG_FILE
 
         ensure_config_dir_exists()
 
@@ -58,6 +61,19 @@ def temp_config_dir():
         config.SETUP_FILE.write_text(
             "#!/bin/bash\n# Test setup script\necho 'Setup complete'"
         )
+
+        # Reset module-level singletons so tests that call
+        # commands.get_pod_manager() directly get a fresh instance
+        # pointing at the temp config directory.
+        original_pod_manager = cli_commands._pod_manager
+        original_ssh_manager = cli_commands._ssh_manager
+        cli_commands._pod_manager = None
+        cli_commands._ssh_manager = None
+
+        # Ensure setup_api_client() doesn't block on keychain/prompt.
+        original_api_key_env = os.environ.get("RUNPOD_API_KEY")
+        if not original_api_key_env:
+            os.environ["RUNPOD_API_KEY"] = "test-key-fixture"
 
         yield config.CONFIG_DIR
 
@@ -68,6 +84,15 @@ def temp_config_dir():
         config.SETUP_FILE = original_config_dir / "setup.sh"
         cli_utils.SETUP_FILE = config.SETUP_FILE
         cli_utils.API_KEY_FILE = config.API_KEY_FILE
+        pod_manager_mod.POD_CONFIG_FILE = config.POD_CONFIG_FILE
+
+        # Restore singletons
+        cli_commands._pod_manager = original_pod_manager
+        cli_commands._ssh_manager = original_ssh_manager
+
+        # Restore API key env var
+        if not original_api_key_env:
+            os.environ.pop("RUNPOD_API_KEY", None)
 
 
 @pytest.fixture(scope="session")
@@ -193,16 +218,16 @@ class TestPodManager:
         raise TimeoutError(f"Pod {pod_id} not ready after {timeout}s")
 
     def cleanup_all(self):
-        """Clean up all test pods."""
+        """Destroy all test pods. terminate_pod handles running pods directly,
+        so the previous stop-then-terminate dance just leaked time and
+        sometimes left pods stopped (not destroyed) if the second call
+        raised."""
         for pod_id in self.created_pods[:]:
             try:
-                # Stop first, then terminate
-                runpod.stop_pod(pod_id)
-                time.sleep(5)  # Brief wait before terminating
                 runpod.terminate_pod(pod_id)
                 self.created_pods.remove(pod_id)
             except Exception as e:
-                print(f"Warning: Failed to cleanup pod {pod_id}: {e}")
+                print(f"Warning: Failed to terminate pod {pod_id}: {e}")
 
 
 @pytest.fixture(scope="module")
