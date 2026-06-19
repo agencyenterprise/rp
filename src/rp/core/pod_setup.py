@@ -43,13 +43,6 @@ class PodSetup:
             self.inject_secrets()
             self.deploy_auto_shutdown()
 
-    def run_managed_restart_setup(self) -> None:
-        """Re-run setup needed after a managed pod restarts (secrets + auto-shutdown)."""
-        with self._wrap_setup_errors():
-            self._wait_for_ssh()
-            self.inject_secrets()
-            self.deploy_auto_shutdown()
-
     @contextmanager
     def _wrap_setup_errors(self):
         """Convert raw ssh CalledProcessError to SetupScriptError so the

@@ -69,7 +69,7 @@ rp down h100-1 --destroy
 | Command | Description |
 |---|---|
 | `rp pod create [template] [--gpu] [--disk SIZE] [--storage SIZE] [--alias] [--note TEXT]` | Create bare pod, run setup.sh |
-| `rp pod start <alias>` | Resume stopped pod (re-injects secrets for managed pods) |
+| `rp pod start <alias>` | Resume stopped pod (re-runs full setup for managed pods, restoring the post-`rp up` state) |
 | `rp pod stop <alias>` | Stop pod |
 | `rp pod destroy <alias> [-f] [--all-sessions]` | Terminate pod permanently |
 | `rp pod track <pod_id_or_name> [alias]` | Track existing pod by ID or name |
