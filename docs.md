@@ -29,7 +29,7 @@ Create a pod with full opinionated setup. This is the recommended way to create 
 
 Uses `rp pod create` under the hood, then layers on: tool installation (uv, tmux, aws CLI, claude CLI, node), non-root `user` account (required by Claude CLI), secret injection from Keychain, and GPU idle auto-shutdown cron (120 min default).
 
-Managed pods are marked with `managed: true` in metadata. On `rp start`, managed pods get secrets re-injected and auto-shutdown redeployed.
+Managed pods are marked with `managed: true` in metadata. On `rp pod start`, managed pods re-run the full setup (tools, non-root user, secrets, auto-shutdown). This restores the post-`rp up` state because a RunPod stop/start can rebuild the container filesystem — only `/workspace` is guaranteed to persist — so system-level tools and the `user` account may be gone. The setup steps are idempotent, so resuming a pod whose filesystem did survive only re-checks them.
 
 The tool-install step waits for cloud-init / unattended-upgrades to release the dpkg lock before running apt, and the whole step is retried up to 3× (30s backoff) on transient apt failures (exit 100 / "Could not get lock"). When something does fail, the full transcript is teed to `/tmp/rp-setup.log` on the pod — `ssh <alias> 'cat /tmp/rp-setup.log'` for post-mortem.
 
@@ -194,7 +194,7 @@ rp pod create h100 --note "AE-5678: pretraining run"               # annotate po
 
 #### `rp pod start <alias>`
 
-Resume a stopped pod. Updates SSH config. For managed pods, re-injects secrets and redeploys auto-shutdown. For bare pods, re-runs setup script.
+Resume a stopped pod. Updates SSH config. For managed pods, re-runs the full opinionated setup (tools, non-root user, secrets, auto-shutdown) so the pod returns to the same state `rp up` would leave it in — necessary because a stop/start can reset the container filesystem (only `/workspace` persists). Setup steps are idempotent. Pass `--no-setup` to skip this. For bare pods, re-runs the setup script.
 
 #### `rp pod stop <alias>`
 

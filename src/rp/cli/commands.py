@@ -548,10 +548,15 @@ def start_command(alias: str | None, no_setup: bool = False) -> None:
         elif metadata and metadata.managed:
             from rp.core.pod_setup import PodSetup
 
-            console.print("⚙️  Re-running managed setup…")
+            console.print("⚙️  Re-provisioning pod…")
             warn_secret_mismatches()
             setup = PodSetup(alias, pod.id, console)
-            setup.run_managed_restart_setup()
+            # Full setup, not a secrets-only subset: a resumed pod can come back
+            # on a fresh container filesystem (only /workspace survives a RunPod
+            # stop/start), so tools and the non-root user must be reinstalled to
+            # restore the post-`rp up` state. Steps are idempotent, so this is
+            # cheap when the filesystem did persist.
+            setup.run_full_setup()
         else:
             # Run legacy setup scripts for non-managed pods
             run_setup_scripts(alias)
