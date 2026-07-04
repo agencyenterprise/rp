@@ -222,8 +222,21 @@ fi
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
-    def deploy_auto_shutdown(self, idle_minutes: int = 120) -> None:
-        """Deploy GPU idle auto-shutdown cron on the pod."""
+    def deploy_auto_shutdown(self) -> None:
+        """Deploy GPU idle auto-shutdown cron on the pod.
+
+        The idle threshold comes from hierarchical settings (see
+        ResolvedSettings.auto_shutdown_idle_minutes). When auto-shutdown is
+        disabled there, any previously deployed cron is removed instead, so
+        re-running setup on a live pod applies the current setting.
+        """
+        from rp.core.settings import resolve_settings
+
+        idle_minutes = resolve_settings().auto_shutdown_idle_minutes()
+        if idle_minutes is None:
+            self._remove_auto_shutdown()
+            return
+
         self.console.print("    Deploying auto-shutdown cron...")
 
         auto_shutdown_ref = importlib.resources.files("rp.assets").joinpath(
@@ -239,9 +252,9 @@ fi
             self._scp_to_pod(str(auto_shutdown_path), "/usr/local/bin/auto_shutdown.sh")
         self._ssh_run_script(f"""
 chmod +x /usr/local/bin/auto_shutdown.sh
-# Set idle threshold via env
-grep -q 'AUTO_SHUTDOWN_IDLE_MINUTES' {ENV_FILE_ROOT} 2>/dev/null || \
-    echo "export AUTO_SHUTDOWN_IDLE_MINUTES={idle_minutes}" >> {ENV_FILE_ROOT}
+# Set idle threshold via env (replace any existing line so re-setup updates it)
+sed -i '/AUTO_SHUTDOWN_IDLE_MINUTES/d' {ENV_FILE_ROOT} 2>/dev/null || true
+echo "export AUTO_SHUTDOWN_IDLE_MINUTES={idle_minutes}" >> {ENV_FILE_ROOT}
 # Install cron job (every 5 minutes)
 CRON_LINE="*/5 * * * * /usr/local/bin/auto_shutdown.sh >> /var/log/auto_shutdown.log 2>&1"
 (crontab -l 2>/dev/null | grep -v auto_shutdown; echo "$CRON_LINE") | crontab -
@@ -250,6 +263,18 @@ pgrep -x cron >/dev/null 2>&1 || {{
     dpkg -s cron >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq cron > /dev/null 2>&1)
     service cron start 2>/dev/null || cron 2>/dev/null || true
 }}
+""")
+
+    def _remove_auto_shutdown(self) -> None:
+        """Strip the auto-shutdown cron, script, and env line from the pod.
+
+        Intentionally prints nothing: the disabled state should not be
+        advertised in setup output.
+        """
+        self._ssh_run_script(f"""
+(crontab -l 2>/dev/null | grep -v auto_shutdown) | crontab - 2>/dev/null || true
+rm -f /usr/local/bin/auto_shutdown.sh
+sed -i '/AUTO_SHUTDOWN_IDLE_MINUTES/d' {ENV_FILE_ROOT} 2>/dev/null || true
 """)
 
     def _wait_for_ssh(self, timeout: int = 300, interval: int = 5) -> None:
