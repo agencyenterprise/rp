@@ -213,3 +213,83 @@ class TestWrapSetupErrors:
             pytest.raises(TimeoutError),
         ):
             setup.run_full_setup()
+
+
+class TestDeployAutoShutdown:
+    """deploy_auto_shutdown honours the developer_mode setting."""
+
+    def _make_setup(self):
+        setup = PodSetup.__new__(PodSetup)
+        setup.ssh_alias = "test-alias"
+        setup.pod_id = "pod-xyz"
+        setup.console = MagicMock()
+        return setup
+
+    def _resolved(self, developer_mode):
+        from rp.core.settings import ResolvedSettings
+
+        return ResolvedSettings(
+            person=None,
+            project=None,
+            secrets=[],
+            sources=[],
+            developer_mode=developer_mode,
+        )
+
+    def test_default_deploys_with_120_minutes(self):
+        setup = self._make_setup()
+        with (
+            patch(
+                "rp.core.settings.resolve_settings",
+                return_value=self._resolved(None),
+            ),
+            patch.object(setup, "_ssh_run_script") as run,
+            patch.object(setup, "_scp_to_pod") as scp,
+        ):
+            setup.deploy_auto_shutdown()
+        scp.assert_called_once()
+        script = run.call_args[0][0]
+        assert "AUTO_SHUTDOWN_IDLE_MINUTES=120" in script
+        assert "crontab" in script
+
+    def test_custom_minutes_reach_env_line(self):
+        setup = self._make_setup()
+        with (
+            patch(
+                "rp.core.settings.resolve_settings",
+                return_value=self._resolved(480),
+            ),
+            patch.object(setup, "_ssh_run_script") as run,
+            patch.object(setup, "_scp_to_pod"),
+        ):
+            setup.deploy_auto_shutdown()
+        assert "AUTO_SHUTDOWN_IDLE_MINUTES=480" in run.call_args[0][0]
+
+    def test_disabled_removes_instead_of_deploying(self):
+        setup = self._make_setup()
+        with (
+            patch(
+                "rp.core.settings.resolve_settings",
+                return_value=self._resolved(True),
+            ),
+            patch.object(setup, "_ssh_run_script") as run,
+            patch.object(setup, "_scp_to_pod") as scp,
+        ):
+            setup.deploy_auto_shutdown()
+        scp.assert_not_called()
+        script = run.call_args[0][0]
+        assert "grep -v auto_shutdown" in script
+        assert "rm -f /usr/local/bin/auto_shutdown.sh" in script
+
+    def test_disabled_prints_nothing(self):
+        """The disabled state must not be advertised in setup output."""
+        setup = self._make_setup()
+        with (
+            patch(
+                "rp.core.settings.resolve_settings",
+                return_value=self._resolved(True),
+            ),
+            patch.object(setup, "_ssh_run_script"),
+        ):
+            setup.deploy_auto_shutdown()
+        setup.console.print.assert_not_called()

@@ -3,6 +3,7 @@
 import json
 
 from rp.core.settings import (
+    DEFAULT_IDLE_MINUTES,
     ResolvedSecret,
     RpSettings,
     _walk_to_root,
@@ -177,6 +178,68 @@ class TestResolveSettings:
 
         resolved = resolve_settings(child)
         assert resolved.aws_profile == "amaranth-mfa"
+
+
+class TestDeveloperMode:
+    def test_absent_gives_default_threshold(self, tmp_path):
+        resolved = resolve_settings(tmp_path)
+        assert resolved.developer_mode is None
+        assert resolved.auto_shutdown_idle_minutes() == DEFAULT_IDLE_MINUTES
+
+    def test_true_disables(self, tmp_path):
+        (tmp_path / ".rp_settings.json").write_text(
+            json.dumps({"developer_mode": True})
+        )
+        resolved = resolve_settings(tmp_path)
+        assert resolved.auto_shutdown_idle_minutes() is None
+
+    def test_one_disables(self, tmp_path):
+        # DEVELOPER_MODE=1 spelling must read as "on", i.e. disabled shutdown
+        (tmp_path / ".rp_settings.json").write_text(json.dumps({"developer_mode": 1}))
+        resolved = resolve_settings(tmp_path)
+        assert resolved.auto_shutdown_idle_minutes() is None
+
+    def test_int_sets_threshold_minutes(self, tmp_path):
+        (tmp_path / ".rp_settings.json").write_text(json.dumps({"developer_mode": 480}))
+        resolved = resolve_settings(tmp_path)
+        assert resolved.auto_shutdown_idle_minutes() == 480
+
+    def test_false_and_zero_keep_default(self, tmp_path):
+        for value in (False, 0):
+            (tmp_path / ".rp_settings.json").write_text(
+                json.dumps({"developer_mode": value})
+            )
+            resolved = resolve_settings(tmp_path)
+            assert resolved.auto_shutdown_idle_minutes() == DEFAULT_IDLE_MINUTES
+
+    def test_inherited_from_parent(self, tmp_path):
+        parent = tmp_path / "parent"
+        child = parent / "child"
+        child.mkdir(parents=True)
+
+        (parent / ".rp_settings.json").write_text(json.dumps({"developer_mode": True}))
+        (child / ".rp_settings.json").write_text(json.dumps({"project": "ast"}))
+
+        resolved = resolve_settings(child)
+        assert resolved.auto_shutdown_idle_minutes() is None
+
+    def test_child_can_reenable(self, tmp_path):
+        # A closer explicit false overrides a parent-level disable
+        parent = tmp_path / "parent"
+        child = parent / "child"
+        child.mkdir(parents=True)
+
+        (parent / ".rp_settings.json").write_text(json.dumps({"developer_mode": True}))
+        (child / ".rp_settings.json").write_text(json.dumps({"developer_mode": False}))
+
+        resolved = resolve_settings(child)
+        assert resolved.auto_shutdown_idle_minutes() == DEFAULT_IDLE_MINUTES
+
+    def test_save_settings_omits_unset_key(self, tmp_path):
+        # rp secrets add etc. rewrite settings files; the knob must not
+        # appear in files where it was never set
+        path = save_settings(tmp_path, RpSettings(person="alex"))
+        assert "developer_mode" not in json.loads(path.read_text())
 
 
 class TestFindNearestSettingsFile:

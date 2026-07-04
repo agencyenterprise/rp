@@ -12,6 +12,9 @@ from pydantic import BaseModel, Field
 
 SETTINGS_FILENAME = ".rp_settings.json"
 
+# Default GPU-idle threshold (minutes) before a managed pod auto-stops.
+DEFAULT_IDLE_MINUTES = 120
+
 
 class RpSettings(BaseModel):
     """Contents of a single .rp_settings.json file."""
@@ -31,6 +34,16 @@ class RpSettings(BaseModel):
             "AWS named profile to export credentials from when injecting AWS_* "
             "vars into managed pods. Pins the project to a specific account so "
             "rp doesn't silently fall back to the shell's default profile."
+        ),
+    )
+    developer_mode: bool | int | None = Field(
+        default=None,
+        description=(
+            "Deliberately undocumented operator knob for the GPU-idle "
+            "auto-shutdown on managed pods. true or 1 disables auto-shutdown "
+            "entirely; an integer >= 2 sets the idle threshold in minutes; "
+            "false/0/absent keeps the default. Keep this out of docs.md and "
+            "README.md."
         ),
     )
 
@@ -62,12 +75,14 @@ class ResolvedSettings:
         secrets: list[ResolvedSecret],
         sources: list[Path],
         aws_profile: str | None = None,
+        developer_mode: bool | int | None = None,
     ):
         self.person = person
         self.project = project
         self.secrets = secrets
         self.sources = sources  # settings files found, closest first
         self.aws_profile = aws_profile
+        self.developer_mode = developer_mode
 
     def template_vars(self) -> dict[str, str]:
         """Return template variables for pod alias resolution."""
@@ -81,6 +96,21 @@ class ResolvedSettings:
     def secret_names(self) -> list[str]:
         """Return deduplicated secret names in resolution order."""
         return [s.name for s in self.secrets]
+
+    def auto_shutdown_idle_minutes(self) -> int | None:
+        """Idle threshold in minutes for managed-pod auto-shutdown.
+
+        Returns None when auto-shutdown is disabled via developer_mode
+        (true or 1 — so the DEVELOPER_MODE=1 spelling reads as expected).
+        An integer >= 2 is a custom threshold in minutes; anything else
+        falls back to the default.
+        """
+        dm = self.developer_mode
+        if dm is True or dm == 1:
+            return None
+        if isinstance(dm, int) and dm >= 2:
+            return dm
+        return DEFAULT_IDLE_MINUTES
 
 
 def _walk_to_root(start: Path) -> list[Path]:
@@ -121,6 +151,7 @@ def resolve_settings(start: Path | None = None) -> ResolvedSettings:
     person: str | None = None
     project: str | None = None
     aws_profile: str | None = None
+    developer_mode: bool | int | None = None
     # Track secrets: name → ResolvedSecret (first/closest wins)
     seen_secrets: dict[str, ResolvedSecret] = {}
     sources: list[Path] = []
@@ -140,6 +171,8 @@ def resolve_settings(start: Path | None = None) -> ResolvedSettings:
             project = settings.project
         if aws_profile is None and settings.aws_profile is not None:
             aws_profile = settings.aws_profile
+        if developer_mode is None and settings.developer_mode is not None:
+            developer_mode = settings.developer_mode
 
         # Closest wins for same-named secrets
         for secret_name in settings.secrets:
@@ -155,6 +188,7 @@ def resolve_settings(start: Path | None = None) -> ResolvedSettings:
         secrets=secrets,
         sources=sources,
         aws_profile=aws_profile,
+        developer_mode=developer_mode,
     )
 
 
